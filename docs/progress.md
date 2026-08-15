@@ -35,17 +35,25 @@ global Node" and packaged-app smoke **must be verified on a real machine / CI**
 failed-upgrade rollback demo ✅ (unit-simulated) · real-device verification
 pending (CI / user machine).
 
-## Phase 3 — in progress
+## Phase 3 — ✅ done
 
 | Task | Status | Notes |
 |---|---|---|
 | T3.1 app shell | ✅ | tokens + sidebar + settings + shell view w/ diagnostic toggle |
 | T3.2 event rendering | ✅ | pure reducer + store + ChatView; 11 fixture-replay tests |
 | T3.3 persistence | ✅ | @dshd/session-store (node:sqlite, WAL, FTS5, import/export); 9 tests |
-| T3.4 interactions | 🔄 | regenerate / edit / branch + custom instructions |
-| T3.5 attachments/onboarding | ⏳ | — |
+| T3.4 interactions | ✅ | branch.ts regenerate/edit/branch + custom instructions; 10 tests |
+| T3.5 attachments/onboarding | ✅ | attachment sandbox (6 tests) + safeStorage KeyVault (6 tests) + onboarding wizard |
 
-## Phase 4–5 — pending
+**Gate 3** (unit level): MVP parity UI in place · persistence survives reopen ✅ ·
+import/export round-trip ✅ · conversation interactions ✅ · key flow ✅.
+Visual parity vs official UI + real-device verification pending (GUI session).
+
+## Phase 4 — in progress
+
+T4.1 permission levels (policy/approval/audit/budget) → T4.2 projects/files/terminal/artifacts.
+
+## Phase 5 — pending
 
 ## Known environment limits (this agent shell)
 
