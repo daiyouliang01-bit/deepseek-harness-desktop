@@ -10,6 +10,10 @@
     "start": "pnpm --filter @dshd/desktop start",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:smoke": "vitest run tests/compatibility",
     "test:e2e": "pnpm --filter @dshd/desktop test:e2e"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
   }
 }
