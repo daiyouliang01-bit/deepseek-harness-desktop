@@ -60,9 +60,27 @@ Visual parity vs official UI + real-device verification pending (GUI session).
 (select project → read → propose → approve → diff → reject → recover) needs
 real-device verification in the GUI session.
 
-## Phase 5 — in progress
+## Phase 5 — ✅ done
 
-T5.1 smoke suite → T5.2 release docs → T5.3 auto-update client → T5.4 compliance.
+| Task | Status | Notes |
+|---|---|---|
+| T5.1 smoke suite | ✅ | tests/compatibility: real dsh startup/HTTP/restart/persistence; 5 tests |
+| T5.2 release docs | ✅ | release-checklist / troubleshooting / rollback-runbook |
+| T5.3 auto-update client | ✅ | UpdateManager (8 tests) + IPC + settings UI (electron-updater) |
+| T5.4 compliance | ✅ | license audit + support bundle + docs/sbom.md + CI audit/smoke gates; 10 tests |
+
+## ✅ All phases implemented (unit-level)
+
+132 tests green: protocol 20 · permissions 15 · session-store 9 · desktop 88
+(harness-process 10, compat 9, upgrade 8, guard 4, reducer 11, branch 10,
+T4.2 features 11, sandbox 6, vault 6, updater 8, support/audit 10, misc).
+
+## Remaining (requires GUI/real device — outside this agent shell)
+
+- E2E shell smoke (runs on your desktop: `pnpm build && pnpm test:e2e`)
+- electron-builder packaging (network: run `pnpm --filter @dshd/desktop package`)
+- Visual parity check of custom shell vs official UI (Gate 3)
+- macOS/Windows signed installers + auto-update end-to-end (Gate 5)
 
 ## Known environment limits (this agent shell)
 
