@@ -1,0 +1,10 @@
+[
+  { "type": "message", "id": "m1", "role": "user", "content": "Run three things at once", "ts": 1000 },
+  { "type": "tool-call", "id": "t1", "callId": "p1", "name": "bash", "args": { "cmd": "echo 1" } },
+  { "type": "tool-call", "id": "t2", "callId": "p2", "name": "bash", "args": { "cmd": "echo 2" } },
+  { "type": "tool-call", "id": "t3", "callId": "p3", "name": "bash", "args": { "cmd": "echo 3" } },
+  { "type": "tool-result", "id": "t4", "callId": "p2", "ok": true, "output": "2" },
+  { "type": "tool-result", "id": "t5", "callId": "p1", "ok": true, "output": "1" },
+  { "type": "tool-result", "id": "t6", "callId": "p3", "ok": true, "output": "3" },
+  { "type": "completion", "id": "run3" }
+]

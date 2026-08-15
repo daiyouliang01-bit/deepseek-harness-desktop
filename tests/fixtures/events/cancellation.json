@@ -1,0 +1,6 @@
+[
+  { "type": "message", "id": "m1", "role": "user", "content": "Search the whole disk", "ts": 1000 },
+  { "type": "delta", "id": "d1", "seq": 1, "text": "Searching…" },
+  { "type": "approval-request", "id": "a1", "permission": "shell:execute", "scope": { "cmd": "find /" } },
+  { "type": "error", "id": "e1", "code": "cancelled", "message": "run cancelled by user", "retryable": false }
+]

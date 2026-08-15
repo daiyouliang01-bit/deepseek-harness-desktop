@@ -1,0 +1,7 @@
+[
+  { "type": "message", "id": "m1", "role": "user", "content": "What is 2+2?", "ts": 1000 },
+  { "type": "delta", "id": "d1", "seq": 1, "text": "2+2" },
+  { "type": "delta", "id": "d1", "seq": 2, "text": " equals " },
+  { "type": "delta", "id": "d1", "seq": 3, "text": "4." },
+  { "type": "completion", "id": "run1", "usage": { "tokens": 42 } }
+]

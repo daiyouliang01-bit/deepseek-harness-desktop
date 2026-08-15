@@ -1,0 +1,5 @@
+[
+  { "type": "message", "id": "m1", "role": "user", "content": "Why is it slow?", "ts": 1000 },
+  { "type": "delta", "id": "d1", "seq": 1, "text": "Let me check…" },
+  { "type": "error", "id": "e1", "code": "rate_limit", "message": "rate limit exceeded (429)", "retryable": true, "hint": "Slow down or upgrade quota; retry later." }
+]

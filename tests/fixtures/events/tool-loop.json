@@ -1,0 +1,10 @@
+[
+  { "type": "message", "id": "m1", "role": "user", "content": "List files and read one", "ts": 1000 },
+  { "type": "reasoning", "id": "r1", "seq": 1, "text": "I will list the directory first" },
+  { "type": "tool-call", "id": "t1", "callId": "c1", "name": "bash", "args": { "cmd": "ls" } },
+  { "type": "tool-result", "id": "t2", "callId": "c1", "ok": true, "output": "a.txt\nb.txt" },
+  { "type": "tool-call", "id": "t3", "callId": "c2", "name": "read", "args": { "path": "a.txt" } },
+  { "type": "tool-result", "id": "t4", "callId": "c2", "ok": true, "output": "hello" },
+  { "type": "delta", "id": "d1", "seq": 2, "text": "Found a.txt containing 'hello'." },
+  { "type": "completion", "id": "run2" }
+]

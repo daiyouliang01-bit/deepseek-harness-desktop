@@ -1,0 +1,7 @@
+[
+  { "type": "message", "id": "m1", "role": "user", "content": "Continue where we left off", "ts": 1000 },
+  { "type": "delta", "id": "d1", "seq": 1, "text": "Reconnecting…" },
+  { "type": "delta", "id": "d1", "seq": 2, "text": "As I was saying," },
+  { "type": "delta", "id": "d1", "seq": 3, "text": " the answer is 42." },
+  { "type": "completion", "id": "run6" }
+]
