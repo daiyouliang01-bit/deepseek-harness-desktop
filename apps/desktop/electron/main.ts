@@ -3,8 +3,43 @@ import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'nod
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isAllowedNavigation } from './navigation-guard'
+import { KeyVault } from './keys/vault'
 import { HarnessProcess } from './runtime/harness-process'
 import type { RuntimeStatus } from './runtime/runtime-types'
+
+// --- app-level key vault (Task 3.5) ---
+// Plain-file store under userData/config; values are safeStorage-encrypted.
+function createVaultStore(): { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void; removeItem: (k: string) => void } {
+  const file = join(app.getPath('userData'), 'config', 'secrets.json')
+  let cache: Record<string, string> | null = null
+  const { readFileSync, writeFileSync } = require('node:fs') as typeof import('node:fs')
+  function load(): Record<string, string> {
+    if (cache) return cache
+    try {
+      cache = JSON.parse(readFileSync(file, 'utf8')) as Record<string, string>
+    } catch {
+      cache = {}
+    }
+    return cache
+  }
+  function persist(): void {
+    mkdirSync(join(app.getPath('userData'), 'config'), { recursive: true })
+    writeFileSync(file, JSON.stringify(load(), null, 2), 'utf8')
+  }
+  return {
+    getItem: (k) => load()[k] ?? null,
+    setItem: (k, v) => {
+      load()[k] = v
+      persist()
+    },
+    removeItem: (k) => {
+      delete load()[k]
+      persist()
+    }
+  }
+}
+
+const keyVault = new KeyVault(createVaultStore())
 
 // --- single instance lock (Task 1.1) ---
 const gotLock = app.requestSingleInstanceLock()
@@ -169,6 +204,26 @@ ipcMain.handle('ui:open-official', async (): Promise<{ ok: boolean; reason?: str
   await mainWindow?.loadURL(status.ready.url)
   return { ok: true }
 })
+
+// --- key vault IPC (Task 3.5): secrets never cross to the renderer ---
+
+const PROVIDERS = ['deepseek']
+
+ipcMain.handle('keys:list', () => keyVault.listKeys(PROVIDERS))
+ipcMain.handle('keys:set', async (_event, provider: string, key: string) => {
+  if (typeof provider !== 'string' || typeof key !== 'string' || !key.trim()) {
+    return { ok: false, error: 'invalid arguments' }
+  }
+  const validation = await keyVault.validateKey(provider, key.trim())
+  if (!validation.ok) return validation
+  keyVault.setKey(provider, key.trim())
+  return { ok: true }
+})
+ipcMain.handle('keys:remove', (_event, provider: string) => {
+  keyVault.removeKey(provider)
+  return { ok: true }
+})
+ipcMain.handle('keys:availability', () => keyVault.isEncryptionAvailable())
 
 app.whenReady().then(() => {
   createWindow()

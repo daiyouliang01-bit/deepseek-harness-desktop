@@ -25,6 +25,10 @@ Security invariants:
 | `restartRuntime()` | `runtime:restart` | `() → RuntimeStatus` | — |
 | `openLogs()` | `runtime:open-logs` | `() → boolean` | — |
 | `openOfficialUI()` | `ui:open-official` | `() → { ok: boolean; reason?: string }` | not-ready |
+| `listKeys()` | `keys:list` | `() → KeyRecord[]` (masked only) | — |
+| `setKey(provider, key)` | `keys:set` | `() → { ok; error? }` — validates live, then stores encrypted | network/auth |
+| `removeKey(provider)` | `keys:remove` | `() → { ok }` | — |
+| `keyEncryptionAvailable()` | `keys:availability` | `() → boolean` | — |
 | `onRuntimeStatus(cb)` | `runtime:status` (event) | `cb(RuntimeStatus)` | — |
 
 ## Types

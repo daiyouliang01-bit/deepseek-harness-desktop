@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { KeyRecord } from './keys/vault'
 import type { RuntimeStatus } from './runtime/runtime-types'
 
 /**
@@ -19,6 +20,13 @@ const api = {
 
   // UI navigation (Task 3.1)
   openOfficialUI: (): Promise<{ ok: boolean; reason?: string }> => ipcRenderer.invoke('ui:open-official'),
+
+  // key vault (Task 3.5) — only masked keys and status cross the bridge
+  listKeys: (): Promise<KeyRecord[]> => ipcRenderer.invoke('keys:list'),
+  setKey: (provider: string, key: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('keys:set', provider, key),
+  removeKey: (provider: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('keys:remove', provider),
+  keyEncryptionAvailable: (): Promise<boolean> => ipcRenderer.invoke('keys:availability'),
 
   onRuntimeStatus: (callback: (status: RuntimeStatus) => void): (() => void) => {
     const listener = (_event: unknown, status: RuntimeStatus) => callback(status)

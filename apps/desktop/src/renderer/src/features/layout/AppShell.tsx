@@ -1,7 +1,8 @@
 import { darkTokens } from '@dshd/ui'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { RuntimeStatus } from '@electron/runtime/runtime-types'
 import { ChatView } from '../chat/ChatView'
+import { Onboarding } from '../onboarding/Onboarding'
 import { ProjectsPanel } from '../projects/ProjectsPanel'
 import { SettingsPanel } from '../settings/SettingsPanel'
 import { Sidebar, type ShellView } from '../sidebar/Sidebar'
@@ -27,7 +28,21 @@ export function AppShell({
 }: AppShellProps): React.JSX.Element {
   const tokens = darkTokens
   const [view, setView] = useState<ShellView>('conversations')
+  const [keyConfigured, setKeyConfigured] = useState<boolean | null>(null)
   const { colors } = tokens
+
+  // First-run gate (Task 3.5): show onboarding until a key is configured.
+  useEffect(() => {
+    void window.desktop.listKeys().then((keys) => setKeyConfigured(keys.some((k) => k.configured)))
+  }, [])
+
+  if (keyConfigured === false) {
+    return (
+      <div style={{ height: '100vh', background: colors.bg, color: colors.text, overflow: 'auto' }}>
+        <Onboarding tokens={tokens} onComplete={() => setKeyConfigured(true)} />
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: colors.bg, color: colors.text }}>
