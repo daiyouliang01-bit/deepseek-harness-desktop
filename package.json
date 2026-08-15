@@ -1,0 +1,15 @@
+{
+  "name": "deepseek-harness-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cross-platform desktop client around the official DeepSeek Harness (dsh)",
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "dev": "pnpm --filter @dshd/desktop dev",
+    "build": "pnpm --filter @dshd/desktop build",
+    "start": "pnpm --filter @dshd/desktop start",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @dshd/desktop test:e2e"
+  }
+}
