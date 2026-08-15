@@ -18,8 +18,12 @@ Security invariants:
 |---|---|---|---|
 | `getVersion()` | `app:get-version` | `() → string` | — |
 | `getPlatform()` | `app:get-platform` | `() → 'darwin' \| 'win32' \| 'linux'` | — |
-| `getRuntimeStatus()` | `runtime:get-status` | `() → RuntimeStatus` | — |
 | `quit()` | `app:quit` | `() → void` | — |
+| `getRuntimeStatus()` | `runtime:get-status` | `() → RuntimeStatus` | — |
+| `startRuntime()` | `runtime:start` | `() → RuntimeStatus` | — |
+| `stopRuntime()` | `runtime:stop` | `() → RuntimeStatus` | — |
+| `restartRuntime()` | `runtime:restart` | `() → RuntimeStatus` | — |
+| `openLogs()` | `runtime:open-logs` | `() → boolean` | — |
 | `onRuntimeStatus(cb)` | `runtime:status` (event) | `cb(RuntimeStatus)` | — |
 
 ## Types
@@ -27,7 +31,10 @@ Security invariants:
 ```ts
 interface RuntimeStatus {
   state: 'idle' | 'starting' | 'ready' | 'stopping' | 'stopped' | 'error'
-  // extended in Task 1.2: pid, port, url, lastError, uptimeMs
+  pid?: number
+  ready?: { url: string; port: number; startupMs: number }
+  lastError?: string
+  startedAt?: number
 }
 ```
 
@@ -35,8 +42,6 @@ interface RuntimeStatus {
 
 | Phase | Method(s) |
 |---|---|
-| 1.2 | `startRuntime()`, `stopRuntime()`, `restartRuntime()`, `openLogs()` |
-| 1.3 | `reloadUI()`, runtime status events with real states |
 | 1.5 | tray actions, global shortcut events, notification permission |
 | 2.1+ | protocol event stream (`onProtocolEvent`), command methods |
 

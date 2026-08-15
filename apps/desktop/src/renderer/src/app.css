@@ -46,6 +46,33 @@ body {
   margin: 0 0 20px;
 }
 
+.small {
+  font-size: 12px;
+  margin-top: 16px;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  margin: 8px auto;
+  border: 3px solid rgba(122, 162, 247, 0.25);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .error {
   color: var(--error);
 }

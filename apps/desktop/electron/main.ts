@@ -1,5 +1,10 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { isAllowedNavigation } from './navigation-guard'
+import { HarnessProcess } from './runtime/harness-process'
+import type { RuntimeStatus } from './runtime/runtime-types'
 
 // --- single instance lock (Task 1.1) ---
 const gotLock = app.requestSingleInstanceLock()
@@ -22,18 +27,75 @@ function getMainWindow(): BrowserWindow | null {
 }
 
 const DEV_SERVER_URL = process.env['ELECTRON_RENDERER_URL']
+// Directory that holds the bundled renderer (index.html + assets)
+const RENDERER_DIR_URL = pathToFileURL(join(__dirname, '../renderer') + '/').href
+const LOG_DIR = join(app.getPath('userData'), 'logs')
+const RUNTIME_LOG = join(LOG_DIR, 'dsh-runtime.log')
+const MAX_LOG_BYTES = 5 * 1024 * 1024
 
-/**
- * Navigation guard (Task 1.3): only the validated loopback origin, the dev
- * server, or bundled files may ever be loaded. Everything else is blocked.
- */
-function isAllowedNavigation(url: string): boolean {
-  if (DEV_SERVER_URL && url.startsWith(DEV_SERVER_URL)) return true
-  if (url.startsWith('file://')) return true
-  // Official Harness Web UI is served on 127.0.0.1:<port> (see docs/upstream-contract.md)
-  return /^http:\/\/127\.0\.0\.1(:\d+)?\//.test(url) || /^http:\/\/localhost(:\d+)?\//.test(url)
+function logLine(stream: 'stdout' | 'stderr', line: string): void {
+  try {
+    if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true })
+    if (existsSync(RUNTIME_LOG) && statSync(RUNTIME_LOG).size > MAX_LOG_BYTES) {
+      renameSync(RUNTIME_LOG, `${RUNTIME_LOG}.1`)
+    }
+    appendFileSync(RUNTIME_LOG, `[${stream}] ${line}\n`)
+  } catch {
+    /* logging must never crash the app */
+  }
 }
 
+/**
+ * Navigation guard: only the validated loopback origin, the dev server, or
+ * bundled files may ever be loaded. Everything else is blocked (see
+ * navigation-guard.ts).
+ */
+function loadRendererScreen(): void {
+  if (!mainWindow) return
+  if (DEV_SERVER_URL) {
+    void mainWindow.loadURL(DEV_SERVER_URL)
+  } else {
+    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
+// --- Harness runtime (Task 1.2/1.3) ---
+const runtime = new HarnessProcess({
+  onOutput: logLine
+})
+
+let uiLoaded = false // whether the official Web UI is currently loaded
+
+function pushStatus(): void {
+  mainWindow?.webContents.send('runtime:status', runtime.getStatus())
+}
+
+runtime.on('statusChange', (status: RuntimeStatus) => {
+  if (status.state === 'ready' && status.ready && mainWindow && !uiLoaded) {
+    uiLoaded = true
+    // Load ONLY the validated loopback URL.
+    void mainWindow.loadURL(status.ready.url)
+  } else if (status.state === 'error' || status.state === 'stopped') {
+    if (uiLoaded) {
+      // Runtime died while the Web UI was loaded → go back to the shell
+      // renderer (loading/recovery screen).
+      uiLoaded = false
+      loadRendererScreen()
+    }
+  }
+  pushStatus()
+})
+
+async function startRuntime(): Promise<RuntimeStatus> {
+  try {
+    await runtime.start()
+  } catch (err) {
+    // status already reflects 'error' via the event; nothing else to do
+  }
+  return runtime.getStatus()
+}
+
+// --- window creation ---
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -59,7 +121,7 @@ function createWindow(): void {
 
   // Navigation guard: block any navigation to unapproved origins.
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!isAllowedNavigation(url)) {
+    if (!isAllowedNavigation(url, DEV_SERVER_URL, RENDERER_DIR_URL)) {
       event.preventDefault()
       console.warn('[guard] blocked navigation to', url)
     }
@@ -71,25 +133,37 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  if (DEV_SERVER_URL) {
-    void mainWindow.loadURL(DEV_SERVER_URL)
-  } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  loadRendererScreen()
 }
 
 // --- IPC: narrow desktop contract (see docs/ipc-contract.md) ---
-// Runtime IPC handlers are stubs until Task 1.2 (HarnessProcess) lands.
 
 ipcMain.handle('app:get-version', () => app.getVersion())
 ipcMain.handle('app:get-platform', () => process.platform)
 ipcMain.handle('app:quit', () => {
   app.quit()
 })
-ipcMain.handle('runtime:get-status', () => ({ state: 'idle' }))
+
+ipcMain.handle('runtime:get-status', () => runtime.getStatus())
+ipcMain.handle('runtime:start', () => startRuntime())
+ipcMain.handle('runtime:stop', async () => {
+  await runtime.stop()
+  return runtime.getStatus()
+})
+ipcMain.handle('runtime:restart', async () => {
+  await runtime.restart()
+  return runtime.getStatus()
+})
+ipcMain.handle('runtime:open-logs', async () => {
+  if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true })
+  await shell.openPath(LOG_DIR)
+  return true
+})
 
 app.whenReady().then(() => {
   createWindow()
+  // Boot the runtime immediately (Task 1.3: auto-start on launch).
+  void startRuntime()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -98,4 +172,9 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   // Task 1.5 will keep the app alive in the tray; until then quit on non-macOS.
   if (process.platform !== 'darwin') app.quit()
+})
+
+// Clean shutdown: kill the child process tree on quit.
+app.on('before-quit', () => {
+  void runtime.stop()
 })

@@ -1,63 +1,93 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import type { RuntimeStatus } from '../../../electron/runtime/runtime-types'
 
-interface ShellInfo {
-  version: string
-  platform: string
-  runtimeState: string
-}
+type Screen = 'loading' | 'recovery'
 
 /**
- * Task 1.1 placeholder shell UI. This will become the loading screen /
- * recovery screen once Task 1.3 loads the official Harness Web UI.
+ * Task 1.3 shell screen. Shows a loading state while the Harness runtime
+ * boots; switches to a recovery screen (retry / restart / open logs / quit)
+ * when the runtime fails or stops. When the runtime is ready, the main
+ * process loads the official Web UI into this window, replacing this view.
  */
 export default function App(): React.JSX.Element {
-  const [info, setInfo] = useState<ShellInfo | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<RuntimeStatus | null>(null)
+  const [version, setVersion] = useState('')
 
   useEffect(() => {
-    let disposed = false
-    async function load(): Promise<void> {
-      try {
-        const desktop = window.desktop
-        const [version, platform, status] = await Promise.all([
-          desktop.getVersion(),
-          desktop.getPlatform(),
-          desktop.getRuntimeStatus()
-        ])
-        if (!disposed) setInfo({ version, platform, runtimeState: status.state })
-      } catch (err) {
-        if (!disposed) setError(err instanceof Error ? err.message : String(err))
-      }
-    }
-    void load()
-    return () => {
-      disposed = true
-    }
+    const desktop = window.desktop
+    void desktop.getVersion().then(setVersion)
+    void desktop.getRuntimeStatus().then(setStatus)
+    const unsubscribe = desktop.onRuntimeStatus(setStatus)
+    return unsubscribe
   }, [])
+
+  const screen: Screen = !status || status.state === 'starting' || status.state === 'idle' ? 'loading' : 'recovery'
+
+  const onRetry = useCallback(() => {
+    void window.desktop.restartRuntime().then(setStatus)
+  }, [])
+  const onRestart = useCallback(() => {
+    void window.desktop.restartRuntime().then(setStatus)
+  }, [])
+  const onStop = useCallback(() => {
+    void window.desktop.stopRuntime().then(setStatus)
+  }, [])
+  const onOpenLogs = useCallback(() => {
+    void window.desktop.openLogs()
+  }, [])
+  const onQuit = useCallback(() => {
+    void window.desktop.quit()
+  }, [])
+
+  if (screen === 'loading') {
+    return (
+      <div className="shell">
+        <div className="card">
+          <h1>DeepSeek Harness Desktop</h1>
+          <p className="muted">Starting local Harness runtime…</p>
+          <div className="spinner" aria-label="loading" />
+          <p className="muted small">{version && `v${version}`}</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="shell">
       <div className="card">
-        <h1>DeepSeek Harness Desktop</h1>
-        <p className="muted">Secure shell booted — waiting for runtime (Task 1.2/1.3)</p>
-        {error && <p className="error">{error}</p>}
-        {info && (
-          <dl className="meta">
+        <h1>Runtime unavailable</h1>
+        <p className="muted">
+          {status?.state === 'stopped'
+            ? 'The Harness runtime is stopped.'
+            : status?.lastError
+              ? status.lastError
+              : 'The Harness runtime failed to start.'}
+        </p>
+        <dl className="meta">
+          <div>
+            <dt>state</dt>
+            <dd>{status?.state ?? 'unknown'}</dd>
+          </div>
+          {status?.pid !== undefined && (
             <div>
-              <dt>app version</dt>
-              <dd>{info.version}</dd>
+              <dt>pid</dt>
+              <dd>{status.pid}</dd>
             </div>
+          )}
+          {status?.ready && (
             <div>
-              <dt>platform</dt>
-              <dd>{info.platform}</dd>
+              <dt>url</dt>
+              <dd>{status.ready.url}</dd>
             </div>
-            <div>
-              <dt>runtime</dt>
-              <dd>{info.runtimeState}</dd>
-            </div>
-          </dl>
-        )}
-        <button onClick={() => void window.desktop.quit()}>Quit</button>
+          )}
+        </dl>
+        <div className="actions">
+          <button onClick={onRetry}>Retry</button>
+          <button onClick={onRestart}>Restart runtime</button>
+          <button onClick={onStop}>Stop</button>
+          <button onClick={onOpenLogs}>Open logs</button>
+          <button onClick={onQuit}>Quit</button>
+        </div>
       </div>
     </div>
   )
