@@ -23,11 +23,24 @@ Updated as tasks complete.
 global Node" and packaged-app smoke **must be verified on a real machine / CI**
 (sandbox has no GUI + GitHub CDN blocked). E2E spec skips gracefully headless.
 
-## Phase 2 — pending
+## Phase 2 — ✅ done (Gate 2 pending machine verification)
 
-T2.1 protocol types → T2.2 compatibility → T2.3 upgrade/rollback.
+| Task | Status | Notes |
+|---|---|---|
+| T2.1 desktop protocol | ✅ | @dshd/protocol: events/commands/version/errors; unknown-event tolerance, malformed rejection, version negotiation; 20 tests + 6-scenario fixture corpus |
+| T2.2 compatibility | ✅ | dsh/Node/version/data-dir/health checks with recovery messages; 9 tests; docs/compatibility-matrix.md |
+| T2.3 upgrade/rollback | ✅ | runtime manifest (pin/previous/history), hash-verified backups, failed-upgrade simulation; 8 tests; docs/upgrade-policy.md |
 
-## Phase 3–5 — pending
+**Gate 2**: protocol tests ✅ · compatibility matrix ✅ (macOS tested) ·
+failed-upgrade rollback demo ✅ (unit-simulated) · real-device verification
+pending (CI / user machine).
+
+## Phase 3 — pending
+
+T3.1 app shell → T3.2 event rendering → T3.3 persistence → T3.4
+interactions → T3.5 attachments/onboarding.
+
+## Phase 4–5 — pending
 
 ## Known environment limits (this agent shell)
 
