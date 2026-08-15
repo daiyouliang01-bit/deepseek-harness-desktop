@@ -37,9 +37,11 @@ export interface ChatState {
   completions: Record<string, { usage?: { tokens: number } }>
   /** pending approvals awaiting user decision */
   approvals: Array<{ id: string; permission: string; scope?: unknown; callId?: string }>
+  /** pending interactive questions awaiting user answer */
+  questions: Array<{ id: string; question: string; options?: Array<{ label: string; value: unknown }>; multiSelect?: boolean }>
 }
 
-export const initialState: ChatState = { messages: [], completions: {}, approvals: [] }
+export const initialState: ChatState = { messages: [], completions: {}, approvals: [], questions: [] }
 
 function lastMessage(state: ChatState): ChatMessage | undefined {
   return state.messages[state.messages.length - 1]
@@ -135,6 +137,15 @@ export function reduceEvent(state: ChatState, event: AgentEvent): ChatState {
       }
     }
 
+    case 'question': {
+      // Interactive question surfaced to the user; rendered by the chat UI
+      // (answer via the adapter's respond path in M4).
+      return {
+        ...state,
+        questions: [...state.questions, { id: event.id, question: event.question, options: event.options, multiSelect: event.multiSelect }]
+      }
+    }
+
     case 'error': {
       const err: ChatError = { code: event.code, message: event.message, retryable: event.retryable, hint: event.hint }
       const last = lastMessage(state)
@@ -176,4 +187,9 @@ export function reduceEvents(state: ChatState, events: AgentEvent[]): ChatState 
 /** Resolve an approval decision. */
 export function resolveApproval(state: ChatState, approvalId: string): ChatState {
   return { ...state, approvals: state.approvals.filter((a) => a.id !== approvalId) }
+}
+
+/** Resolve an answered question. */
+export function resolveQuestion(state: ChatState, questionId: string): ChatState {
+  return { ...state, questions: state.questions.filter((q) => q.id !== questionId) }
 }

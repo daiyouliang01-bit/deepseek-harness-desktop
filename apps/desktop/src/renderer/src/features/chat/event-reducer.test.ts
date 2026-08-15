@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent } from '@dshd/protocol'
 import { decodeEventObject } from '@dshd/protocol'
-import { initialState, reduceEvents, resolveApproval } from './event-reducer'
+import { initialState, reduceEvents, resolveApproval, resolveQuestion } from './event-reducer'
 
 const FIXTURES_DIR = join(__dirname, '../../../../../../../tests/fixtures/events')
 
@@ -92,6 +92,16 @@ describe('event reducer — invariants', () => {
     expect(state.approvals).toHaveLength(1)
     state = resolveApproval(state, 'a1')
     expect(state.approvals).toHaveLength(0)
+  })
+
+  it('question events surface pending questions and resolve', () => {
+    let state = reduceEvents(initialState, [
+      { type: 'question', id: 'q1', question: 'Pick a workspace?', options: [{ label: 'A', value: 'a' }] }
+    ])
+    expect(state.questions).toHaveLength(1)
+    expect(state.questions[0].question).toBe('Pick a workspace?')
+    state = resolveQuestion(state, 'q1')
+    expect(state.questions).toHaveLength(0)
   })
 
   it('is pure: input state is not mutated', () => {
