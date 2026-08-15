@@ -71,6 +71,15 @@ export interface CompletionEvent {
   usage?: { tokens: number }
 }
 
+/** Interactive question surfaced to the user (Harness question/requested). */
+export interface QuestionEvent {
+  type: 'question'
+  id: string
+  question: string
+  options?: Array<{ label: string; value: unknown }>
+  multiSelect?: boolean
+}
+
 export interface UnknownEvent {
   type: 'unknown'
   rawType: string
@@ -86,6 +95,7 @@ export type AgentEvent =
   | ApprovalRequestEvent
   | ErrorEvent
   | CompletionEvent
+  | QuestionEvent
   | UnknownEvent
 
 const KNOWN_TYPES = new Set([
@@ -96,7 +106,8 @@ const KNOWN_TYPES = new Set([
   'tool-result',
   'approval-request',
   'error',
-  'completion'
+  'completion',
+  'question'
 ])
 
 export type DecodeResult =
@@ -192,6 +203,14 @@ export function decodeEventObject(parsed: unknown): DecodeResult {
           usage: typeof obj.usage === 'object' && obj.usage !== null ? (obj.usage as { tokens: number }) : undefined
         }
       }
+    case 'question':
+      return requireFields(obj, ['question'], (o) => ({
+        type: 'question' as const,
+        id,
+        question: String(o.question),
+        options: Array.isArray(o.options) ? (o.options as Array<{ label: string; value: unknown }>) : undefined,
+        multiSelect: typeof o.multiSelect === 'boolean' ? o.multiSelect : undefined
+      }))
     default:
       return { ok: false, reason: `unhandled known type '${obj.type}'` }
   }
