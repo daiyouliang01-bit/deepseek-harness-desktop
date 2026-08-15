@@ -9,7 +9,12 @@
     "noEmit": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@dshd/protocol": ["./../../packages/protocol/src/index.ts"],
+      "@dshd/session-store": ["./../../packages/session-store/src/index.ts"],
+      "@dshd/permissions": ["./../../packages/permissions/src/index.ts"]
+    }
   },
   "include": ["electron/**/*.ts", "electron.vite.config.ts"]
 }
