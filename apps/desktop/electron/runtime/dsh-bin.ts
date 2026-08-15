@@ -15,15 +15,23 @@ function onPath(bin: string): boolean {
   }
 }
 
-export function findDsh() {
+/** Global npm bin dir, e.g. <prefix>/node_modules/.bin (npm bin was removed in npm 9). */
+function globalNpmBin(): string | null {
+  try {
+    const root = execFileSync('npm', ['root', '-g'], { encoding: 'utf8', timeout: 10_000 }).trim()
+    return join(root, '.bin')
+  } catch {
+    return null
+  }
+}
+
+export function findDsh(): string | null {
   if (process.env.DSHD_DSH_BIN) return process.env.DSHD_DSH_BIN
   if (onPath('dsh')) return 'dsh'
-  try {
-    const binDir = execFileSync('npm', ['bin', '-g'], { encoding: 'utf8', timeout: 10_000 }).trim()
+  const binDir = globalNpmBin()
+  if (binDir) {
     const candidate = join(binDir, process.platform === 'win32' ? 'dsh.cmd' : 'dsh')
     if (existsSync(candidate)) return candidate
-  } catch {
-    /* npm unavailable — fall through */
   }
   return null
 }

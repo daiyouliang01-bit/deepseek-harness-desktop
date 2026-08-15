@@ -24,13 +24,14 @@ function onPath(bin) {
   }
 }
 
-/** Find `dsh`: PATH first, then the global npm bin directory. */
+/** Find `dsh`: PATH first, then the global npm bin directory
+ *  (`npm bin -g` was removed in npm 9 — use `npm root -g` + .bin). */
 function findDsh() {
   if (process.env.DSHD_DSH_BIN) return process.env.DSHD_DSH_BIN
   if (onPath('dsh')) return 'dsh'
   try {
-    const binDir = execFileSync('npm', ['bin', '-g'], { encoding: 'utf8', timeout: 10_000 }).trim()
-    const candidate = join(binDir, process.platform === 'win32' ? 'dsh.cmd' : 'dsh')
+    const root = execFileSync('npm', ['root', '-g'], { encoding: 'utf8', timeout: 10_000 }).trim()
+    const candidate = join(root, '.bin', process.platform === 'win32' ? 'dsh.cmd' : 'dsh')
     if (existsSync(candidate)) return candidate
   } catch {
     /* npm unavailable */

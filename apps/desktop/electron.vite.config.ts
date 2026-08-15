@@ -6,14 +6,17 @@ export default defineConfig({
   main: {
     build: {
       lib: {
-        entry: resolve(__dirname, 'electron/main.ts')
+        // electron-vite derives the entry name from the file name; the
+        // electron-vite convention layout (electron/main/index.ts) yields
+        // out/main/index.js, matching package.json `main`.
+        entry: resolve(__dirname, 'electron/main/index.ts')
       }
     }
   },
   preload: {
     build: {
       lib: {
-        entry: resolve(__dirname, 'electron/preload.ts')
+        entry: resolve(__dirname, 'electron/preload/index.ts')
       }
     }
   },

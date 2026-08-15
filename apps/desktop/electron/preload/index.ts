@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { KeyRecord } from './keys/vault'
-import type { RuntimeStatus } from './runtime/runtime-types'
-import type { UpdateState } from './updater/update-manager'
+import type { KeyRecord } from '../keys/vault'
+import type { RuntimeStatus } from '../runtime/runtime-types'
+import type { UpdateState } from '../updater/update-manager'
 
 /**
  * The only surface exposed to the renderer (see docs/ipc-contract.md).

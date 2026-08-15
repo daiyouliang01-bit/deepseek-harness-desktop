@@ -11,7 +11,12 @@ import { _electron as electron, expect, test } from '@playwright/test'
  * within a short budget.
  */
 const sshHeadless = Boolean(process.env.SSH_TTY || process.env.SSH_CONNECTION)
-test.skip(sshHeadless, 'requires a GUI session; skipped under SSH/headless')
+test.skip(sshHeadless, 'requires a GUI session; skipped under SSH/headless — run from the Mac console Terminal instead of SSH')
+
+function skipWithReason(message: string): void {
+  process.stderr.write(`[e2e-skip] ${message}\n`)
+  test.skip(true, message)
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return Promise.race([
@@ -38,7 +43,7 @@ test('secure shell window opens and exposes only the preload bridge', async () =
     )
   } catch (err) {
     killOrphans()
-    test.skip(true, `no GUI session (${(err as Error).message}); skipping`)
+    skipWithReason(`no GUI session — electron.launch timed out (${(err as Error).message}). Run from the Mac console Terminal (not SSH).`)
     return
   }
 
@@ -47,7 +52,7 @@ test('secure shell window opens and exposes only the preload bridge', async () =
     page = await withTimeout(app.firstWindow(), 8000, 'no-window')
   } catch (err) {
     await app.close().catch(() => undefined)
-    test.skip(true, `no GUI window within 8s (${(err as Error).message}); skipping`)
+    skipWithReason(`no GUI window within 8s (${(err as Error).message}). Electron launched but no window appeared — run from the Mac console Terminal.`)
     return
   }
 

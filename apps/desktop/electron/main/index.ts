@@ -2,12 +2,12 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { isAllowedNavigation } from './navigation-guard'
-import { KeyVault } from './keys/vault'
-import { HarnessProcess } from './runtime/harness-process'
-import { findDsh } from './runtime/dsh-bin'
-import type { RuntimeStatus } from './runtime/runtime-types'
-import { createElectronUpdaterProvider, UpdateManager } from './updater/update-manager'
+import { isAllowedNavigation } from '../navigation-guard'
+import { KeyVault } from '../keys/vault'
+import { HarnessProcess } from '../runtime/harness-process'
+import { findDsh } from '../runtime/dsh-bin'
+import type { RuntimeStatus } from '../runtime/runtime-types'
+import { createElectronUpdaterProvider, UpdateManager } from '../updater/update-manager'
 
 // --- app-level key vault (Task 3.5) ---
 // Plain-file store under userData/config; values are safeStorage-encrypted.
