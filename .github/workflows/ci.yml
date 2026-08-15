@@ -29,8 +29,18 @@ jobs:
       - name: Unit + integration tests
         run: pnpm test
 
+      - name: Dependency audit (T5.4)
+        run: pnpm audit --prod
+
       - name: Build
         run: pnpm build
+
+      # Compatibility smoke against the real pinned dsh (T5.1/T5.4).
+      - name: Install dsh CLI
+        run: npm install -g @deepseek-ai/dsh
+
+      - name: Compatibility smoke suite
+        run: pnpm test:smoke
 
       # E2E needs a GUI session; CI on macOS runners has one. The test skips
       # automatically when no window can be created (see shell.spec.ts).
