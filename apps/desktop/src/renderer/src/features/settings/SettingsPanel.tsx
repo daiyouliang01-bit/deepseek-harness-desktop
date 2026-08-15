@@ -1,5 +1,7 @@
 import type { Tokens } from '@dshd/ui'
+import { useEffect, useState } from 'react'
 import type { RuntimeStatus } from '@electron/runtime/runtime-types'
+import type { UpdateState } from '@electron/updater/update-manager'
 
 interface SettingsPanelProps {
   tokens: Tokens
@@ -8,6 +10,39 @@ interface SettingsPanelProps {
   onStop: () => void
   onOpenLogs: () => void
   onBackToOfficial: () => void
+}
+
+function UpdateSection({ tokens }: { tokens: Tokens }): React.JSX.Element {
+  const [state, setState] = useState<UpdateState | null>(null)
+  const { colors, space } = tokens
+
+  useEffect(() => {
+    void window.desktop.updateGetState().then(setState)
+    return window.desktop.onUpdateState(setState)
+  }, [])
+
+  return (
+    <section style={{ background: colors.surface, borderRadius: 10, padding: space.md, marginBottom: space.md }}>
+      <h3 style={{ color: colors.text, fontSize: 18, margin: `0 0 ${space.sm}px` }}>Updates</h3>
+      <div style={{ color: colors.textMuted, fontSize: 14, marginBottom: space.sm }}>
+        {state?.status === 'available' && `New version ${state.version} available`}
+        {state?.status === 'downloading' && `Downloading… ${Math.round(state.percent ?? 0)}%`}
+        {state?.status === 'downloaded' && 'Downloaded — restart to install'}
+        {state?.status === 'up-to-date' && 'Up to date'}
+        {state?.status === 'error' && `Update error: ${state.error}`}
+        {!state && '…'}
+      </div>
+      <div style={{ display: 'flex', gap: space.sm }}>
+        <button onClick={() => void window.desktop.updateCheck()}>Check for updates</button>
+        {state?.status === 'available' && (
+          <button onClick={() => void window.desktop.updateDownload()}>Download</button>
+        )}
+        {state?.status === 'downloaded' && (
+          <button onClick={() => void window.desktop.updateInstall()}>Restart & install</button>
+        )}
+      </div>
+    </section>
+  )
 }
 
 /**
@@ -75,6 +110,8 @@ export function SettingsPanel({
           <span style={{ color: colors.success }}>managed in OS keychain (main process)</span>
         </div>
       </section>
+
+      <UpdateSection tokens={tokens} />
 
       <section style={{ background: colors.surface, borderRadius: radius.md, padding: space.md }}>
         <h3 style={{ color: colors.text, fontSize: font.sizeLg, margin: `0 0 ${space.sm}px` }}>Official Web UI</h3>

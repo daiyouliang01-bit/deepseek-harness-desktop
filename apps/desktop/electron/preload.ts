@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { KeyRecord } from './keys/vault'
 import type { RuntimeStatus } from './runtime/runtime-types'
+import type { UpdateState } from './updater/update-manager'
 
 /**
  * The only surface exposed to the renderer (see docs/ipc-contract.md).
@@ -27,6 +28,19 @@ const api = {
     ipcRenderer.invoke('keys:set', provider, key),
   removeKey: (provider: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('keys:remove', provider),
   keyEncryptionAvailable: (): Promise<boolean> => ipcRenderer.invoke('keys:availability'),
+
+  // auto-update (Task 5.3)
+  updateGetState: (): Promise<UpdateState> => ipcRenderer.invoke('update:get-state'),
+  updateCheck: (): Promise<UpdateState> => ipcRenderer.invoke('update:check'),
+  updateDownload: (): Promise<UpdateState> => ipcRenderer.invoke('update:download'),
+  updateInstall: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('update:install'),
+  onUpdateState: (cb: (state: UpdateState) => void): (() => void) => {
+    const listener = (_event: unknown, state: UpdateState) => cb(state)
+    ipcRenderer.on('update:state', listener)
+    return () => {
+      ipcRenderer.removeListener('update:state', listener)
+    }
+  },
 
   onRuntimeStatus: (callback: (status: RuntimeStatus) => void): (() => void) => {
     const listener = (_event: unknown, status: RuntimeStatus) => callback(status)

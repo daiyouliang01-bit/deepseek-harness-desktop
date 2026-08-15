@@ -6,6 +6,7 @@ import { isAllowedNavigation } from './navigation-guard'
 import { KeyVault } from './keys/vault'
 import { HarnessProcess } from './runtime/harness-process'
 import type { RuntimeStatus } from './runtime/runtime-types'
+import { createElectronUpdaterProvider, UpdateManager } from './updater/update-manager'
 
 // --- app-level key vault (Task 3.5) ---
 // Plain-file store under userData/config; values are safeStorage-encrypted.
@@ -40,6 +41,9 @@ function createVaultStore(): { getItem: (k: string) => string | null; setItem: (
 }
 
 const keyVault = new KeyVault(createVaultStore())
+
+// --- auto-update (Task 5.3) ---
+const updater = new UpdateManager(createElectronUpdaterProvider())
 
 // --- single instance lock (Task 1.1) ---
 const gotLock = app.requestSingleInstanceLock()
@@ -224,6 +228,19 @@ ipcMain.handle('keys:remove', (_event, provider: string) => {
   return { ok: true }
 })
 ipcMain.handle('keys:availability', () => keyVault.isEncryptionAvailable())
+
+// --- auto-update IPC (Task 5.3) ---
+
+ipcMain.handle('update:get-state', () => updater.getState())
+ipcMain.handle('update:check', () => updater.check())
+ipcMain.handle('update:download', () => updater.download())
+ipcMain.handle('update:install', () => {
+  updater.install()
+  return { ok: true }
+})
+updater.subscribe(() => {
+  mainWindow?.webContents.send('update:state', updater.getState())
+})
 
 app.whenReady().then(() => {
   createWindow()
