@@ -35,10 +35,15 @@ global Node" and packaged-app smoke **must be verified on a real machine / CI**
 failed-upgrade rollback demo ✅ (unit-simulated) · real-device verification
 pending (CI / user machine).
 
-## Phase 3 — pending
+## Phase 3 — in progress
 
-T3.1 app shell → T3.2 event rendering → T3.3 persistence → T3.4
-interactions → T3.5 attachments/onboarding.
+| Task | Status | Notes |
+|---|---|---|
+| T3.1 app shell | ✅ | tokens + sidebar + settings + shell view w/ diagnostic toggle |
+| T3.2 event rendering | ✅ | pure reducer + store + ChatView; 11 fixture-replay tests |
+| T3.3 persistence | ✅ | @dshd/session-store (node:sqlite, WAL, FTS5, import/export); 9 tests |
+| T3.4 interactions | 🔄 | regenerate / edit / branch + custom instructions |
+| T3.5 attachments/onboarding | ⏳ | — |
 
 ## Phase 4–5 — pending
 
