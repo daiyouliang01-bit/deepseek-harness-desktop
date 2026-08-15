@@ -80,14 +80,14 @@ describe('event decoding', () => {
 
 describe('commands', () => {
   it('round-trips all command shapes', () => {
-    const cmds: Array<{ c: Parameters<typeof decodeCommand>[0] }> = [
-      { c: decodeCommand(encodeCommand({ type: 'send-message', conversationId: 'cv', content: 'hi' })) },
-      { c: decodeCommand(encodeCommand({ type: 'cancel', runId: 'r' })) },
-      { c: decodeCommand(encodeCommand({ type: 'retry', runId: 'r' })) },
-      { c: decodeCommand(encodeCommand({ type: 'approve', approvalId: 'a', allowed: true })) },
-      { c: decodeCommand(encodeCommand({ type: 'ping' })) }
+    const cmds = [
+      decodeCommand(encodeCommand({ type: 'send-message', conversationId: 'cv', content: 'hi' })),
+      decodeCommand(encodeCommand({ type: 'cancel', runId: 'r' })),
+      decodeCommand(encodeCommand({ type: 'retry', runId: 'r' })),
+      decodeCommand(encodeCommand({ type: 'approve', approvalId: 'a', allowed: true })),
+      decodeCommand(encodeCommand({ type: 'ping' }))
     ]
-    expect(cmds.map((x) => x.c.type)).toEqual(['send-message', 'cancel', 'retry', 'approve', 'ping'])
+    expect(cmds.map((x) => x.type)).toEqual(['send-message', 'cancel', 'retry', 'approve', 'ping'])
   })
 
   it('rejects malformed commands', () => {
