@@ -36,6 +36,8 @@ export interface HarnessProcessOptions {
   healthProbe?: boolean
   /** Health probe timeout per attempt (default 2s). */
   healthProbeTimeoutMs?: number
+  /** Poll interval between failed health probes (default 500ms). */
+  healthProbeIntervalMs?: number
   /** Callback sink for captured stdout/stderr lines (for logs). */
   onOutput?: (stream: 'stdout' | 'stderr', line: string) => void
   /** Default: '--host 127.0.0.1 --port 0' (OS-assigned free port, ADR-007). */

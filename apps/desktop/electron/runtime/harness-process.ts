@@ -13,6 +13,7 @@ import {
 
 const DEFAULT_READY_TIMEOUT_MS = 30_000
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000
+const DEFAULT_HEALTH_PROBE_INTERVAL_MS = 500
 const DEFAULT_ARGS = ['--host', '127.0.0.1', '--port', '0']
 
 export class HarnessProcess extends EventEmitter<HarnessProcessEvents> {
@@ -33,6 +34,7 @@ export class HarnessProcess extends EventEmitter<HarnessProcessEvents> {
       readyTimeoutMs: options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS,
       healthProbe: options.healthProbe ?? true,
       healthProbeTimeoutMs: options.healthProbeTimeoutMs ?? DEFAULT_HEALTH_PROBE_TIMEOUT_MS,
+      healthProbeIntervalMs: options.healthProbeIntervalMs ?? DEFAULT_HEALTH_PROBE_INTERVAL_MS,
       onOutput: options.onOutput ?? (() => undefined),
       defaultArgs: options.defaultArgs ?? DEFAULT_ARGS
     }
@@ -101,20 +103,44 @@ export class HarnessProcess extends EventEmitter<HarnessProcessEvents> {
       if (!line.trim()) continue
       this.options.onOutput(stream, line)
       const m = READY_LINE_RE.exec(line)
-      if (m) void this.tryReady(m)
+      if (m) this.startReadyPolling(m)
     }
   }
 
-  private async tryReady(m: RegExpExecArray): Promise<void> {
-    const port = m[2] ? Number(m[2]) : 0
-    const url = m[1]
-    if (this.status.state !== 'starting') return
+  private pendingReady: { url: string; port: number } | null = null
+  private polling = false
 
-    if (this.options.healthProbe) {
-      const ok = await this.probeHealth(url)
-      if (!ok) return // keep waiting; the server may not have bound yet
+  /**
+   * The ready URL line prints just before the server finishes binding, so a
+   * single health probe can race the socket. Poll until the server answers
+   * (bounded by the startup timeout, which fails the start on expiry).
+   */
+  private startReadyPolling(m: RegExpExecArray): void {
+    if (this.status.state !== 'starting') return
+    this.pendingReady = {
+      url: m[1],
+      port: m[2] ? Number(m[2]) : 0
     }
-    this.markReady(url, port)
+    if (!this.polling) void this.pollHealth()
+  }
+
+  private async pollHealth(): Promise<void> {
+    this.polling = true
+    let attempt = 0
+    while (this.pendingReady && this.status.state === 'starting') {
+      const { url, port } = this.pendingReady
+      attempt++
+      const ok = this.options.healthProbe ? await this.probeHealth(url) : true
+      if (ok) {
+        this.pendingReady = null
+        this.polling = false
+        this.markReady(url, port)
+        return
+      }
+      this.options.onOutput('stdout', `[health-probe] not up yet, retrying ${url} (attempt ${attempt})`)
+      await new Promise((r) => setTimeout(r, this.options.healthProbeIntervalMs))
+    }
+    this.polling = false
   }
 
   private async probeHealth(url: string): Promise<boolean> {

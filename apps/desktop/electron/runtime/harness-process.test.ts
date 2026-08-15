@@ -68,19 +68,20 @@ describe('HarnessProcess (fake child)', () => {
     )
   })
 
-  it('keeps waiting when the health probe fails, then resolves once it succeeds', async () => {
+  it('keeps polling when the health probe fails, then resolves once the server is up', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockRejectedValueOnce(new Error('conn refused'))
       .mockResolvedValueOnce(new Response(null, { status: 200 }))
 
-    const hp = new HarnessProcess()
+    const hp = new HarnessProcess({ healthProbeIntervalMs: 500 })
     const readyPromise = hp.start()
-    emitStdout('dsh web: http://127.0.0.1:59853')
+    emitStdout('dsh web: http://127.0.0.1:59853') // prints ONCE (real dsh prints it once)
     // first probe rejected — still starting
     await vi.advanceTimersByTimeAsync(10)
     expect(hp.getStatus().state).toBe('starting')
-    emitStdout('dsh web: http://127.0.0.1:59853') // second line triggers retry
+    // poll interval elapses → retry probe succeeds
+    await vi.advanceTimersByTimeAsync(500)
     const info = await readyPromise
     expect(info.port).toBe(59853)
     expect(fetchMock).toHaveBeenCalledTimes(2)
