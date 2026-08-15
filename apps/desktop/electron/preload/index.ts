@@ -21,6 +21,13 @@ const api = {
 
   // UI navigation (Task 3.1)
   openOfficialUI: (): Promise<{ ok: boolean; reason?: string }> => ipcRenderer.invoke('ui:open-official'),
+  onOpenShell: (callback: () => void): (() => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('ui:open-shell', listener)
+    return () => {
+      ipcRenderer.removeListener('ui:open-shell', listener)
+    }
+  },
 
   // key vault (Task 3.5) — only masked keys and status cross the bridge
   listKeys: (): Promise<KeyRecord[]> => ipcRenderer.invoke('keys:list'),

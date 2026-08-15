@@ -26,6 +26,9 @@ export default function App(): React.JSX.Element {
     return unsubscribe
   }, [])
 
+  // App menu "View → Custom Shell" (Task 1.5/3.1) swaps the window to the shell view.
+  useEffect(() => window.desktop.onOpenShell(() => setScreen('shell')), [])
+
   // Follow runtime state unless the user explicitly opened the custom shell.
   useEffect(() => {
     if (screen === 'shell') return

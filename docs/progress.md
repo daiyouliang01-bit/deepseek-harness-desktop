@@ -18,6 +18,7 @@ Updated as tasks complete.
 | T1.2 HarnessProcess | ✅ | 8 unit + 2 real-dsh integration tests; tree kill; dual-channel ready |
 | T1.3 load official UI | ✅ | auto-start, validated loopback load, recovery screen, guard tests |
 | T1.4 dev packaging | ✅ (config) | electron-builder.yml + CI; local package blocked by sandbox network |
+| T1.5 tray/shortcut/notifications | ✅ | tray + Cmd+Shift+Space summon + runtime notifications + hide-to-tray + View menu shell↔official toggle; 9 tests; docs/desktop-behavior.md |
 
 **Gate 1**: security baseline ✅ · lifecycle ✅ · CI scripts ✅ · "runs without
 global Node" and packaged-app smoke **must be verified on a real machine / CI**

@@ -1,12 +1,17 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, shell, Tray } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isAllowedNavigation } from '../navigation-guard'
 import { KeyVault } from '../keys/vault'
+import { buildAppMenuTemplate } from '../menu'
+import { RuntimeNotifier } from '../notifications'
 import { HarnessProcess } from '../runtime/harness-process'
 import { findDsh } from '../runtime/dsh-bin'
 import type { RuntimeStatus } from '../runtime/runtime-types'
+import { GlobalShortcutManager } from '../shortcuts'
+import { buildTrayMenuTemplate } from '../tray'
+import { TRAY_ICON_DATA_URL } from '../tray-icon'
 import { createElectronUpdaterProvider, UpdateManager } from '../updater/update-manager'
 
 // --- app-level key vault (Task 3.5) ---
@@ -45,6 +50,83 @@ const keyVault = new KeyVault(createVaultStore())
 
 // --- auto-update (Task 5.3) ---
 const updater = new UpdateManager(createElectronUpdaterProvider())
+
+// --- desktop presence (Task 1.5): tray / shortcut / notifications ---
+let tray: Tray | null = null
+let isQuitting = false
+
+const notifier = new RuntimeNotifier({
+  isSupported: () => Notification.isSupported(),
+  show: (title, body) => {
+    if (!Notification.isSupported()) return
+    new Notification({ title, body }).show()
+  }
+})
+
+function toggleWindow(): void {
+  if (!mainWindow) {
+    createWindow()
+    return
+  }
+  if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+    mainWindow.hide()
+  } else {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  }
+}
+
+const shortcutManager = new GlobalShortcutManager(
+  {
+    register: (accelerator, cb) => {
+      try {
+        return globalShortcut.register(accelerator, cb)
+      } catch {
+        return false
+      }
+    },
+    unregister: (accelerator) => globalShortcut.unregister(accelerator),
+    unregisterAll: () => globalShortcut.unregisterAll()
+  },
+  () => toggleWindow()
+)
+
+const trayActions = {
+  toggleWindow,
+  startRuntime: () => void startRuntime(),
+  stopRuntime: () => void runtime.stop(),
+  openLogs: async () => {
+    if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true })
+    await shell.openPath(LOG_DIR)
+  },
+  quit: () => app.quit()
+}
+
+function updateTrayMenu(): void {
+  if (!tray) return
+  tray.setContextMenu(Menu.buildFromTemplate(buildTrayMenuTemplate(runtime.getStatus().state, trayActions)))
+}
+
+function createTray(): void {
+  tray = new Tray(nativeImage.createFromDataURL(TRAY_ICON_DATA_URL))
+  tray.setToolTip('DeepSeek Harness Desktop')
+  tray.on('click', () => toggleWindow())
+  updateTrayMenu()
+}
+
+function installAppMenu(): void {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      buildAppMenuTemplate({
+        openCustomShell: () => openCustomShell(),
+        openOfficialUI: () => void openOfficialUI(),
+        reload: () => mainWindow?.webContents.reload(),
+        quit: () => app.quit()
+      }) as Electron.MenuItemConstructorOptions[]
+    )
+  )
+}
 
 // --- single instance lock (Task 1.1) ---
 const gotLock = app.requestSingleInstanceLock()
@@ -107,13 +189,40 @@ const runtime = new HarnessProcess({
 })
 
 let uiLoaded = false // whether the official Web UI is currently loaded
+let shellRequested = false // user asked for the custom shell view
 
 function pushStatus(): void {
   mainWindow?.webContents.send('runtime:status', runtime.getStatus())
 }
 
+/** Load the shell renderer and ask it to show the custom shell view. */
+function openCustomShell(): void {
+  shellRequested = true
+  uiLoaded = false
+  loadRendererScreen()
+  const win = mainWindow
+  if (win) {
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.send('ui:open-shell')
+    })
+  }
+}
+
+async function openOfficialUI(): Promise<{ ok: boolean; reason?: string }> {
+  const status = runtime.getStatus()
+  if (status.state !== 'ready' || !status.ready) {
+    return { ok: false, reason: `runtime not ready (${status.state})` }
+  }
+  shellRequested = false
+  uiLoaded = true
+  await mainWindow?.loadURL(status.ready.url)
+  return { ok: true }
+}
+
 runtime.on('statusChange', (status: RuntimeStatus) => {
-  if (status.state === 'ready' && status.ready && mainWindow && !uiLoaded) {
+  notifier.handleStatus(status)
+  updateTrayMenu()
+  if (status.state === 'ready' && status.ready && mainWindow && !uiLoaded && !shellRequested) {
     uiLoaded = true
     // Load ONLY the validated loopback URL.
     void mainWindow.loadURL(status.ready.url)
@@ -161,6 +270,14 @@ function createWindow(): void {
     mainWindow = null
   })
 
+  // Hide to tray on close (Task 1.5); quit only via tray/menu/Cmd+Q.
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault()
+      mainWindow?.hide()
+    }
+  })
+
   // Navigation guard: block any navigation to unapproved origins.
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (!isAllowedNavigation(url, DEV_SERVER_URL, RENDERER_DIR_URL)) {
@@ -202,15 +319,7 @@ ipcMain.handle('runtime:open-logs', async () => {
   return true
 })
 
-ipcMain.handle('ui:open-official', async (): Promise<{ ok: boolean; reason?: string }> => {
-  const status = runtime.getStatus()
-  if (status.state !== 'ready' || !status.ready) {
-    return { ok: false, reason: `runtime not ready (${status.state})` }
-  }
-  uiLoaded = true
-  await mainWindow?.loadURL(status.ready.url)
-  return { ok: true }
-})
+ipcMain.handle('ui:open-official', () => openOfficialUI())
 
 // --- key vault IPC (Task 3.5): secrets never cross to the renderer ---
 
@@ -247,6 +356,11 @@ updater.subscribe(() => {
 
 app.whenReady().then(() => {
   createWindow()
+  createTray()
+  installAppMenu()
+  if (!shortcutManager.register()) {
+    console.warn('[shortcut] summon accelerator is taken by another app')
+  }
   // Boot the runtime immediately (Task 1.3: auto-start on launch).
   void startRuntime()
   app.on('activate', () => {
@@ -254,12 +368,14 @@ app.whenReady().then(() => {
   })
 })
 
+// Tray keeps the app alive; quitting happens via tray/menu/Cmd+Q.
 app.on('window-all-closed', () => {
-  // Task 1.5 will keep the app alive in the tray; until then quit on non-macOS.
-  if (process.platform !== 'darwin') app.quit()
+  /* no-op: tray resident */
 })
 
 // Clean shutdown: kill the child process tree on quit.
 app.on('before-quit', () => {
+  isQuitting = true
+  shortcutManager.dispose()
   void runtime.stop()
 })

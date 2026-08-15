@@ -25,6 +25,7 @@ Security invariants:
 | `restartRuntime()` | `runtime:restart` | `() → RuntimeStatus` | — |
 | `openLogs()` | `runtime:open-logs` | `() → boolean` | — |
 | `openOfficialUI()` | `ui:open-official` | `() → { ok: boolean; reason?: string }` | not-ready |
+| `onOpenShell(cb)` | `ui:open-shell` (event) | `cb()` — switches renderer to the custom shell view | — |
 | `listKeys()` | `keys:list` | `() → KeyRecord[]` (masked only) | — |
 | `setKey(provider, key)` | `keys:set` | `() → { ok; error? }` — validates live, then stores encrypted | network/auth |
 | `removeKey(provider)` | `keys:remove` | `() → { ok }` | — |
