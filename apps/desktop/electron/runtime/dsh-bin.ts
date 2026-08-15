@@ -4,6 +4,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 function onPath(bin: string): boolean {
@@ -15,21 +16,26 @@ function onPath(bin: string): boolean {
   }
 }
 
-/** Global npm bin dir, e.g. <prefix>/node_modules/.bin (npm bin was removed in npm 9). */
-function globalNpmBin(): string | null {
+/** Candidate dirs for a globally installed dsh, in priority order. */
+function candidateDirs(): string[] {
+  const dirs: string[] = []
   try {
     const root = execFileSync('npm', ['root', '-g'], { encoding: 'utf8', timeout: 10_000 }).trim()
-    return join(root, '.bin')
+    dirs.push(join(root, '.bin'))
   } catch {
-    return null
+    /* npm unavailable */
   }
+  // npm/pnpm may have installed globals under ~/node_modules instead
+  dirs.push(join(homedir(), 'node_modules', '.bin'))
+  // common Linux/brew layout
+  dirs.push('/usr/local/bin')
+  return dirs
 }
 
 export function findDsh(): string | null {
   if (process.env.DSHD_DSH_BIN) return process.env.DSHD_DSH_BIN
   if (onPath('dsh')) return 'dsh'
-  const binDir = globalNpmBin()
-  if (binDir) {
+  for (const binDir of candidateDirs()) {
     const candidate = join(binDir, process.platform === 'win32' ? 'dsh.cmd' : 'dsh')
     if (existsSync(candidate)) return candidate
   }

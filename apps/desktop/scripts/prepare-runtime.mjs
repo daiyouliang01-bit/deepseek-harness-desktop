@@ -11,6 +11,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 const isRelease = process.argv.includes('--release')
@@ -24,17 +25,24 @@ function onPath(bin) {
   }
 }
 
-/** Find `dsh`: PATH first, then the global npm bin directory
- *  (`npm bin -g` was removed in npm 9 — use `npm root -g` + .bin). */
+/** Find `dsh`: PATH first, then common global bin locations
+ *  (`npm bin -g` was removed in npm 9 — use `npm root -g` + .bin, plus the
+ *  ~/node_modules/.bin layout some setups use). */
 function findDsh() {
   if (process.env.DSHD_DSH_BIN) return process.env.DSHD_DSH_BIN
   if (onPath('dsh')) return 'dsh'
+  const candidates = []
   try {
     const root = execFileSync('npm', ['root', '-g'], { encoding: 'utf8', timeout: 10_000 }).trim()
-    const candidate = join(root, '.bin', process.platform === 'win32' ? 'dsh.cmd' : 'dsh')
-    if (existsSync(candidate)) return candidate
+    candidates.push(join(root, '.bin'))
   } catch {
     /* npm unavailable */
+  }
+  candidates.push(join(homedir(), 'node_modules', '.bin'))
+  candidates.push('/usr/local/bin')
+  for (const binDir of candidates) {
+    const candidate = join(binDir, process.platform === 'win32' ? 'dsh.cmd' : 'dsh')
+    if (existsSync(candidate)) return candidate
   }
   return null
 }
