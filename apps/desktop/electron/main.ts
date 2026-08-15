@@ -160,6 +160,16 @@ ipcMain.handle('runtime:open-logs', async () => {
   return true
 })
 
+ipcMain.handle('ui:open-official', async (): Promise<{ ok: boolean; reason?: string }> => {
+  const status = runtime.getStatus()
+  if (status.state !== 'ready' || !status.ready) {
+    return { ok: false, reason: `runtime not ready (${status.state})` }
+  }
+  uiLoaded = true
+  await mainWindow?.loadURL(status.ready.url)
+  return { ok: true }
+})
+
 app.whenReady().then(() => {
   createWindow()
   // Boot the runtime immediately (Task 1.3: auto-start on launch).

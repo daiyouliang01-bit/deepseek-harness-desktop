@@ -24,6 +24,7 @@ Security invariants:
 | `stopRuntime()` | `runtime:stop` | `() → RuntimeStatus` | — |
 | `restartRuntime()` | `runtime:restart` | `() → RuntimeStatus` | — |
 | `openLogs()` | `runtime:open-logs` | `() → boolean` | — |
+| `openOfficialUI()` | `ui:open-official` | `() → { ok: boolean; reason?: string }` | not-ready |
 | `onRuntimeStatus(cb)` | `runtime:status` (event) | `cb(RuntimeStatus)` | — |
 
 ## Types

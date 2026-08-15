@@ -17,6 +17,9 @@ const api = {
   restartRuntime: (): Promise<RuntimeStatus> => ipcRenderer.invoke('runtime:restart'),
   openLogs: (): Promise<boolean> => ipcRenderer.invoke('runtime:open-logs'),
 
+  // UI navigation (Task 3.1)
+  openOfficialUI: (): Promise<{ ok: boolean; reason?: string }> => ipcRenderer.invoke('ui:open-official'),
+
   onRuntimeStatus: (callback: (status: RuntimeStatus) => void): (() => void) => {
     const listener = (_event: unknown, status: RuntimeStatus) => callback(status)
     ipcRenderer.on('runtime:status', listener)

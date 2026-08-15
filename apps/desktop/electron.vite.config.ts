@@ -18,6 +18,13 @@ export default defineConfig({
     }
   },
   renderer: {
-    plugins: [react()]
+    plugins: [react()],
+    resolve: {
+      alias: {
+        '@dshd/ui': resolve(__dirname, '../../packages/ui/src/index.ts'),
+        '@dshd/protocol': resolve(__dirname, '../../packages/protocol/src/index.ts'),
+        '@electron': resolve(__dirname, 'electron')
+      }
+    }
   }
 })

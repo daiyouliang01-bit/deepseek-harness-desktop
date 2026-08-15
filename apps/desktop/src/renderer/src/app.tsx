@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { RuntimeStatus } from '../../../electron/runtime/runtime-types'
+import type { RuntimeStatus } from '@electron/runtime/runtime-types'
+import { AppShell } from './features/layout/AppShell'
 
-type Screen = 'loading' | 'recovery'
+type Screen = 'loading' | 'recovery' | 'shell'
 
 /**
- * Task 1.3 shell screen. Shows a loading state while the Harness runtime
- * boots; switches to a recovery screen (retry / restart / open logs / quit)
- * when the runtime fails or stops. When the runtime is ready, the main
- * process loads the official Web UI into this window, replacing this view.
+ * Task 1.3 + 3.1 shell screen.
+ * - loading: shown while the Harness runtime boots
+ * - recovery: runtime failed/stopped → retry / restart / open logs / quit
+ * - shell: custom ChatGPT/Claude-style shell (Task 3.1), reachable via the
+ *   diagnostic toggle; "Open official UI" swaps back to the official Web UI
+ * When the runtime is ready, the main process normally loads the official Web
+ * UI into this window, replacing this view entirely.
  */
 export default function App(): React.JSX.Element {
   const [status, setStatus] = useState<RuntimeStatus | null>(null)
   const [version, setVersion] = useState('')
+  const [screen, setScreen] = useState<Screen>('loading')
 
   useEffect(() => {
     const desktop = window.desktop
@@ -21,7 +26,12 @@ export default function App(): React.JSX.Element {
     return unsubscribe
   }, [])
 
-  const screen: Screen = !status || status.state === 'starting' || status.state === 'idle' ? 'loading' : 'recovery'
+  // Follow runtime state unless the user explicitly opened the custom shell.
+  useEffect(() => {
+    if (screen === 'shell') return
+    if (!status || status.state === 'starting' || status.state === 'idle') setScreen('loading')
+    else setScreen('recovery')
+  }, [status, screen])
 
   const onRetry = useCallback(() => {
     void window.desktop.restartRuntime().then(setStatus)
@@ -38,6 +48,27 @@ export default function App(): React.JSX.Element {
   const onQuit = useCallback(() => {
     void window.desktop.quit()
   }, [])
+  const onOpenShell = useCallback(() => setScreen('shell'), [])
+  const onBackToOfficial = useCallback(() => {
+    void window.desktop.openOfficialUI().then((res) => {
+      if (!res.ok) {
+        // runtime not ready — the status event will drive the screen
+        setScreen('recovery')
+      }
+    })
+  }, [])
+
+  if (screen === 'shell') {
+    return (
+      <AppShell
+        status={status}
+        onRestart={onRestart}
+        onStop={onStop}
+        onOpenLogs={onOpenLogs}
+        onBackToOfficial={onBackToOfficial}
+      />
+    )
+  }
 
   if (screen === 'loading') {
     return (
@@ -47,6 +78,9 @@ export default function App(): React.JSX.Element {
           <p className="muted">Starting local Harness runtime…</p>
           <div className="spinner" aria-label="loading" />
           <p className="muted small">{version && `v${version}`}</p>
+          <button className="ghost" onClick={onOpenShell}>
+            Open custom shell (preview)
+          </button>
         </div>
       </div>
     )
@@ -86,6 +120,7 @@ export default function App(): React.JSX.Element {
           <button onClick={onRestart}>Restart runtime</button>
           <button onClick={onStop}>Stop</button>
           <button onClick={onOpenLogs}>Open logs</button>
+          <button onClick={onOpenShell}>Custom shell</button>
           <button onClick={onQuit}>Quit</button>
         </div>
       </div>
