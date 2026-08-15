@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { isAllowedNavigation } from './navigation-guard'
 import { KeyVault } from './keys/vault'
 import { HarnessProcess } from './runtime/harness-process'
+import { findDsh } from './runtime/dsh-bin'
 import type { RuntimeStatus } from './runtime/runtime-types'
 import { createElectronUpdaterProvider, UpdateManager } from './updater/update-manager'
 
@@ -99,7 +100,9 @@ function loadRendererScreen(): void {
 }
 
 // --- Harness runtime (Task 1.2/1.3) ---
+// Resolve `dsh` from PATH or the global npm bin dir (some shells lack it).
 const runtime = new HarnessProcess({
+  dshBin: findDsh() ?? 'dsh',
   onOutput: logLine
 })
 

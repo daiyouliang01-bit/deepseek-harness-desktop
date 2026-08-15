@@ -5,6 +5,7 @@
   "description": "Cross-platform desktop client around the official DeepSeek Harness (dsh)",
   "packageManager": "pnpm@11.21.0",
   "scripts": {
+    "postinstall": "node scripts/ensure-electron.mjs",
     "dev": "pnpm --filter @dshd/desktop dev",
     "build": "pnpm --filter @dshd/desktop build",
     "start": "pnpm --filter @dshd/desktop start",
