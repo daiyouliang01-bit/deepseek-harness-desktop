@@ -1,0 +1,18 @@
+{
+  "name": "@dshd/session-store",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local SQLite persistence for conversations, messages, tool calls, settings (Task 3.3)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
