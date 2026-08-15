@@ -1,0 +1,39 @@
+# Task 1.4 — electron-builder configuration.
+# Dev builds target the current OS only; the runtime (Node + dsh) is bundled
+# per ADR-002 once Task 1.4's prepare-runtime lands (see scripts/prepare-runtime.ts).
+
+appId: ai.deepseek.harness.desktop
+productName: DeepSeek Harness Desktop
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.map"
+
+# dsh runtime is NOT yet bundled; dev builds require a globally installed dsh.
+# Release builds will add an extraResources entry for the pinned runtime.
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+  # code signing secrets land in CI (Task 5.2); local builds run unsigned.
+  identity: null
+
+win:
+  target:
+    - nsis
+    - zip
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+linux:
+  target:
+    - AppImage
+  category: Development

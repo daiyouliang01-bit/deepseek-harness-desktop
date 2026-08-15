@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit + integration tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      # E2E needs a GUI session; CI on macOS runners has one. The test skips
+      # automatically when no window can be created (see shell.spec.ts).
+      - name: E2E shell smoke
+        run: pnpm --filter @dshd/desktop test:e2e
+
+  package:
+    runs-on: macos-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Dev package: verifies prepare-runtime + electron-builder produce an
+      # artifact. Requires a global dsh on the runner (installed via npm).
+      - name: Install dsh CLI
+        run: npm install -g @deepseek-ai/dsh
+
+      - name: Dev package
+        run: pnpm --filter @dshd/desktop package
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-dev-package
+          path: apps/desktop/release/*
