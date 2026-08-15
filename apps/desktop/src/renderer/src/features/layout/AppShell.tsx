@@ -1,7 +1,7 @@
 import { darkTokens } from '@dshd/ui'
 import { useState } from 'react'
 import type { RuntimeStatus } from '@electron/runtime/runtime-types'
-import { ConversationsPanel } from '../conversations/ConversationsPanel'
+import { ChatView } from '../chat/ChatView'
 import { ProjectsPanel } from '../projects/ProjectsPanel'
 import { SettingsPanel } from '../settings/SettingsPanel'
 import { Sidebar, type ShellView } from '../sidebar/Sidebar'
@@ -33,7 +33,7 @@ export function AppShell({
     <div style={{ display: 'flex', height: '100vh', background: colors.bg, color: colors.text }}>
       <Sidebar tokens={tokens} view={view} onNavigate={setView} runtimeState={status?.state ?? 'idle'} />
       <main style={{ flex: 1, overflow: 'auto', padding: tokens.space.lg }}>
-        {view === 'conversations' && <ConversationsPanel tokens={tokens} />}
+        {view === 'conversations' && <ChatView tokens={tokens} />}
         {view === 'projects' && <ProjectsPanel tokens={tokens} />}
         {view === 'settings' && (
           <SettingsPanel
