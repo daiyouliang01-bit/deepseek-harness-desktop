@@ -49,11 +49,20 @@ pending (CI / user machine).
 import/export round-trip ✅ · conversation interactions ✅ · key flow ✅.
 Visual parity vs official UI + real-device verification pending (GUI session).
 
-## Phase 4 — in progress
+## Phase 4 — ✅ done
 
-T4.1 permission levels (policy/approval/audit/budget) → T4.2 projects/files/terminal/artifacts.
+| Task | Status | Notes |
+|---|---|---|
+| T4.1 permission levels | ✅ | @dshd/permissions: policy/approval/audit/budget; 15 tests + matrix doc |
+| T4.2 projects/files/terminal/artifacts | ✅ | tree/diff/artifact-whitelist/jobs models; 11 tests |
 
-## Phase 5 — pending
+**Gate 4** (unit level): permission matrix ✅ · budget block ✅ · e2e剧本
+(select project → read → propose → approve → diff → reject → recover) needs
+real-device verification in the GUI session.
+
+## Phase 5 — in progress
+
+T5.1 smoke suite → T5.2 release docs → T5.3 auto-update client → T5.4 compliance.
 
 ## Known environment limits (this agent shell)
 
