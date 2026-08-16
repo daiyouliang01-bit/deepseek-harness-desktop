@@ -30,6 +30,12 @@ Security invariants:
 | `setKey(provider, key)` | `keys:set` | `() → { ok; error? }` — validates live, then stores encrypted | network/auth |
 | `removeKey(provider)` | `keys:remove` | `() → { ok }` | — |
 | `keyEncryptionAvailable()` | `keys:availability` | `() → boolean` | — |
+| `sessionList()` | `sessions:list` | `() → SessionOpResult<SessionSummary[]>` | runtime-not-ready |
+| `sessionCreate(cwd?)` | `sessions:create` | `() → SessionOpResult<{sessionId}>` | runtime-not-ready |
+| `sessionHistory(id, beforeSeq?)` | `sessions:history` | `() → SessionOpResult<HistoryPage>` (events pre-mapped to protocol) | runtime-not-ready |
+| `sessionRename(id, title)` | `sessions:rename` | `() → SessionOpResult<string>` | runtime-not-ready |
+| `sessionSearch(query)` | `sessions:search` | `() → SessionOpResult<SessionSearchResult[]>` — remote, falls back to local FTS | runtime-not-ready |
+| `sessionArchive(id)` | `sessions:archive` | `() → {ok}` — local-only (no official session.delete) | — |
 | `onRuntimeStatus(cb)` | `runtime:status` (event) | `cb(RuntimeStatus)` | — |
 
 ## Types

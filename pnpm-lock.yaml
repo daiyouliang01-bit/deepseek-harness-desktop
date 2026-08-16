@@ -14,6 +14,18 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@dshd/permissions':
+        specifier: workspace:*
+        version: link:../../packages/permissions
+      '@dshd/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@dshd/session-store':
+        specifier: workspace:*
+        version: link:../../packages/session-store
+      '@dshd/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9(supports-color@7.2.0)

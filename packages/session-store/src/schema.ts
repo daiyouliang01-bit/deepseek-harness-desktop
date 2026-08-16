@@ -1,6 +1,6 @@
 /** Task 3.3 — session store schema (SQLite, WAL, schema versioning, FTS5). */
 
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 export const DDL = `
 PRAGMA journal_mode = WAL;
@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   project_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  runtime_version TEXT
+  runtime_version TEXT,
+  archived INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -92,6 +93,7 @@ export interface ConversationRow {
   createdAt: number
   updatedAt: number
   runtimeVersion: string | null
+  archived?: boolean
 }
 
 export interface MessageRow {

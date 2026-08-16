@@ -4,6 +4,9 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isAllowedNavigation } from '../navigation-guard'
 import { KeyVault } from '../keys/vault'
+import { SessionAdapter } from '../adapter/session-adapter'
+import { RpcClient } from '../adapter/rpc-client'
+import { SessionStore } from '@dshd/session-store'
 import { buildAppMenuTemplate } from '../menu'
 import { RuntimeNotifier } from '../notifications'
 import { HarnessProcess } from '../runtime/harness-process'
@@ -188,6 +191,22 @@ const runtime = new HarnessProcess({
   onOutput: logLine
 })
 
+// --- session adapter (M2): wire client + local cache, rebuilt per runtime ---
+let sessionAdapter: SessionAdapter | null = null
+
+function ensureSessionAdapter(): SessionAdapter | null {
+  const status = runtime.getStatus()
+  if (status.state !== 'ready' || !status.ready) return null
+  if (sessionAdapter) return sessionAdapter
+  const client = new RpcClient({ baseUrl: status.ready.url })
+  const store = new SessionStore({
+    path: join(app.getPath('userData'), 'db', 'sessions.db'),
+    runtimeVersion: process.env.npm_package_version
+  })
+  sessionAdapter = new SessionAdapter({ client, store })
+  return sessionAdapter
+}
+
 let uiLoaded = false // whether the official Web UI is currently loaded
 let shellRequested = false // user asked for the custom shell view
 
@@ -227,6 +246,7 @@ runtime.on('statusChange', (status: RuntimeStatus) => {
     // Load ONLY the validated loopback URL.
     void mainWindow.loadURL(status.ready.url)
   } else if (status.state === 'error' || status.state === 'stopped') {
+    sessionAdapter = null // runtime gone → adapter must rebuild on next ready
     if (uiLoaded) {
       // Runtime died while the Web UI was loaded → go back to the shell
       // renderer (loading/recovery screen).
@@ -340,6 +360,31 @@ ipcMain.handle('keys:remove', (_event, provider: string) => {
   return { ok: true }
 })
 ipcMain.handle('keys:availability', () => keyVault.isEncryptionAvailable())
+
+// --- session domain IPC (M2) ---
+
+function withAdapter<T>(fn: (adapter: SessionAdapter) => Promise<T>): Promise<{ ok: boolean; error?: string; value?: T }> {
+  const adapter = ensureSessionAdapter()
+  if (!adapter) return Promise.resolve({ ok: false, error: 'runtime not ready' })
+  return fn(adapter).then(
+    (value) => ({ ok: true, value }),
+    (err) => ({ ok: false, error: err instanceof Error ? err.message : String(err) })
+  )
+}
+
+ipcMain.handle('sessions:list', () => withAdapter((a) => a.list()))
+ipcMain.handle('sessions:create', (_e, cwd?: string) => withAdapter((a) => a.create(cwd)))
+ipcMain.handle('sessions:history', (_e, sessionId: string, beforeSeq?: number) =>
+  withAdapter((a) => a.history(sessionId, beforeSeq))
+)
+ipcMain.handle('sessions:rename', (_e, sessionId: string, title: string) => withAdapter((a) => a.rename(sessionId, title)))
+ipcMain.handle('sessions:search', (_e, query: string) => withAdapter((a) => a.search(query)))
+ipcMain.handle('sessions:archive', (_e, sessionId: string) => {
+  const adapter = ensureSessionAdapter()
+  if (!adapter) return { ok: false, error: 'runtime not ready' }
+  adapter.archive(sessionId)
+  return { ok: true }
+})
 
 // --- auto-update IPC (Task 5.3) ---
 

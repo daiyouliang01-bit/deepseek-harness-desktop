@@ -21,16 +21,23 @@ export class SessionStore {
     this.migrate()
   }
 
-  /** Apply schema + version metadata (idempotent). */
+  /** Apply schema + version metadata (idempotent) + stepwise migrations. */
   migrate(): void {
     this.db.exec(DDL)
-    this.db.exec(SEED_META)
+    // Read the OLD version BEFORE stamping the new one (migrations run first).
     const row = this.db.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get() as { value: string } | undefined
-    const version = Number(row?.value ?? 0)
-    if (version !== SCHEMA_VERSION) {
-      // Future migrations run here (version < SCHEMA_VERSION → stepwise).
-      this.db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)`).run(String(SCHEMA_VERSION))
+    const oldVersion = Number(row?.value ?? 0)
+
+    if (oldVersion < 2) {
+      // v1 → v2: add the conversations.archived flag (M2 session archiving).
+      const cols = this.db.prepare(`PRAGMA table_info(conversations)`).all() as Array<{ name: string }>
+      if (!cols.some((c) => c.name === 'archived')) {
+        this.db.exec(`ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`)
+      }
     }
+
+    this.db.exec(SEED_META)
+    this.db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)`).run(String(SCHEMA_VERSION))
   }
 
   close(): void {
@@ -56,11 +63,36 @@ export class SessionStore {
     return { id, title, projectId: null, createdAt: now, updatedAt: now, runtimeVersion: this.runtimeVersion ?? null }
   }
 
-  listConversations(limit = 100): ConversationRow[] {
+  /** Upsert a remote session summary into the local cache (M2). */
+  upsertConversation(id: string, title: string, updatedAt: number): void {
+    this.db
+      .prepare(
+        `INSERT INTO conversations (id, title, created_at, updated_at, archived)
+         VALUES (?, ?, ?, ?, 0)
+         ON CONFLICT(id) DO UPDATE SET
+           title = excluded.title,
+           updated_at = excluded.updated_at,
+           archived = conversations.archived`
+      )
+      .run(id, title, updatedAt, updatedAt)
+  }
+
+  listConversations(limit = 100, includeArchived = false): ConversationRow[] {
     const rows = this.db
-      .prepare(`SELECT * FROM conversations ORDER BY updated_at DESC LIMIT ?`)
+      .prepare(
+        `SELECT * FROM conversations ${includeArchived ? '' : 'WHERE archived = 0'} ORDER BY updated_at DESC LIMIT ?`
+      )
       .all(limit) as Array<Record<string, unknown>>
     return rows.map(rowToConversation)
+  }
+
+  setArchived(id: string, archived: boolean): void {
+    this.db.prepare(`UPDATE conversations SET archived = ? WHERE id = ?`).run(archived ? 1 : 0, id)
+  }
+
+  isArchived(id: string): boolean {
+    const row = this.db.prepare(`SELECT archived FROM conversations WHERE id = ?`).get(id) as { archived: number } | undefined
+    return row?.archived === 1
   }
 
   getConversation(id: string): ConversationRow | null {
@@ -232,7 +264,8 @@ function rowToConversation(r: Record<string, unknown>): ConversationRow {
     projectId: r.project_id === null ? null : String(r.project_id),
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
-    runtimeVersion: r.runtime_version === null ? null : String(r.runtime_version)
+    runtimeVersion: r.runtime_version === null ? null : String(r.runtime_version),
+    archived: r.archived === 1
   }
 }
 

@@ -2,6 +2,13 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { KeyRecord } from '../keys/vault'
 import type { RuntimeStatus } from '../runtime/runtime-types'
 import type { UpdateState } from '../updater/update-manager'
+import type { HistoryPage, SessionSearchResult, SessionSummary } from '../adapter/session-adapter'
+
+export interface SessionOpResult<T> {
+  ok: boolean
+  error?: string
+  value?: T
+}
 
 /**
  * The only surface exposed to the renderer (see docs/ipc-contract.md).
@@ -48,6 +55,16 @@ const api = {
       ipcRenderer.removeListener('update:state', listener)
     }
   },
+
+  // session domain (M2)
+  sessionList: (): Promise<SessionOpResult<SessionSummary[]>> => ipcRenderer.invoke('sessions:list'),
+  sessionCreate: (cwd?: string): Promise<SessionOpResult<{ sessionId: string }>> => ipcRenderer.invoke('sessions:create', cwd),
+  sessionHistory: (sessionId: string, beforeSeq?: number): Promise<SessionOpResult<HistoryPage>> =>
+    ipcRenderer.invoke('sessions:history', sessionId, beforeSeq),
+  sessionRename: (sessionId: string, title: string): Promise<SessionOpResult<string>> =>
+    ipcRenderer.invoke('sessions:rename', sessionId, title),
+  sessionSearch: (query: string): Promise<SessionOpResult<SessionSearchResult[]>> => ipcRenderer.invoke('sessions:search', query),
+  sessionArchive: (sessionId: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('sessions:archive', sessionId),
 
   onRuntimeStatus: (callback: (status: RuntimeStatus) => void): (() => void) => {
     const listener = (_event: unknown, status: RuntimeStatus) => callback(status)

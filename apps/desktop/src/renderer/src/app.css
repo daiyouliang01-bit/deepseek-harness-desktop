@@ -119,3 +119,17 @@ button.ghost {
   margin-top: 8px;
   font-weight: 500;
 }
+
+button.mini {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
+  padding: 3px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+button.mini.danger {
+  color: var(--error);
+  border-color: rgba(247, 118, 142, 0.4);
+}

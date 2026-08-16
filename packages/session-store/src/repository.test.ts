@@ -47,10 +47,10 @@ describe('session store (file-backed)', () => {
 
   it('schema migration runs idempotently and stamps the version', () => {
     const s1 = new SessionStore({ path })
-    expect(s1.getSchemaVersion()).toBe(1)
+    expect(s1.getSchemaVersion()).toBe(2)
     s1.close()
     const s2 = new SessionStore({ path }) // reopen → migrate() again
-    expect(s2.getSchemaVersion()).toBe(1)
+    expect(s2.getSchemaVersion()).toBe(2)
     s2.close()
   })
 
