@@ -30,6 +30,8 @@ export interface HarnessProcessOptions {
   dshBin?: string
   /** Extra args passed after `web` (e.g. `--trusted-host`). */
   extraArgs?: string[]
+  /** Top-level dsh flags passed BEFORE the subcommand (e.g. `--patch`). */
+  topLevelArgs?: string[]
   /** Timeout for the process to become ready (default 30s). */
   readyTimeoutMs?: number
   /** Whether to run the HTTP health probe after parsing the URL (default true). */

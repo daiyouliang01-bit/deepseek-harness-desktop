@@ -1,0 +1,23 @@
+# Desktop custom-shell tool enablement (applied after dsh-web-app bundle):
+# the web surface disables the base toolset; the desktop shell re-enables it
+# so the custom UI has the same tools as headless/base profiles.
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: false
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+- id: tool-str-replace-editor
+  name: '@deepseek-ai/dsh-tool-str-replace-editor'
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'

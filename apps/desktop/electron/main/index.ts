@@ -187,8 +187,23 @@ function loadRendererScreen(): void {
 
 // --- Harness runtime (Task 1.2/1.3) ---
 // Resolve `dsh` from PATH or the global npm bin dir (some shells lack it).
+// Desktop custom shell enables the base toolset (web surface disables it)
+// via an official `--patch` overlay shipped with the app.
+function desktopPatchPath(): string {
+  // packaged: <resources>/desktop-tools.patch.yml; dev: repo resources dir
+  const candidates = [
+    join(process.resourcesPath ?? '', 'desktop-tools.patch.yml'),
+    join(__dirname, '../../../resources/desktop-tools.patch.yml')
+  ]
+  for (const p of candidates) {
+    if (existsSync(p)) return p
+  }
+  return candidates[1]
+}
+
 const runtime = new HarnessProcess({
   dshBin: findDsh() ?? 'dsh',
+  topLevelArgs: ['--patch', desktopPatchPath()],
   onOutput: logLine
 })
 

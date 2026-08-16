@@ -31,6 +31,7 @@ export class HarnessProcess extends EventEmitter<HarnessProcessEvents> {
     this.options = {
       dshBin: options.dshBin ?? 'dsh',
       extraArgs: options.extraArgs ?? [],
+      topLevelArgs: options.topLevelArgs ?? [],
       readyTimeoutMs: options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS,
       healthProbe: options.healthProbe ?? true,
       healthProbeTimeoutMs: options.healthProbeTimeoutMs ?? DEFAULT_HEALTH_PROBE_TIMEOUT_MS,
@@ -52,8 +53,13 @@ export class HarnessProcess extends EventEmitter<HarnessProcessEvents> {
   async start(): Promise<ReadyInfo> {
     if (this.isRunning()) throw new Error('runtime already running')
 
-    const { dshBin, extraArgs, defaultArgs } = this.options
-    const args = ['web', ...defaultArgs, ...extraArgs]
+    const { dshBin, extraArgs, defaultArgs, topLevelArgs } = this.options
+    // Top-level flags (--patch/--profile) must precede the subcommand; the
+    // `web` alias refuses parent flags, so use `--profile web` when we have
+    // top-level args, and the plain `web` alias otherwise.
+    const args = topLevelArgs.length > 0
+      ? [...topLevelArgs, '--profile', 'web', ...defaultArgs, ...extraArgs]
+      : ['web', ...defaultArgs, ...extraArgs]
 
     this.setStatus('starting')
     const child = spawn(dshBin, args, { stdio: ['ignore', 'pipe', 'pipe'] })
