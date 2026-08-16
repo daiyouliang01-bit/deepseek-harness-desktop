@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { AgentEvent } from '@dshd/protocol'
 import { messageStore } from './message-store'
 import type { ChatMessage, ChatState, ToolCallState } from './event-reducer'
+import { ImageAttachments, type PendingImage } from './ImageAttachments'
 
 interface ChatViewProps {
   tokens: Tokens
@@ -179,6 +180,7 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [streamRunning, setStreamRunning] = useState(false)
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
 
   useEffect(() => messageStore.subscribe(setState), [])
 
@@ -200,19 +202,43 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
 
   const onSend = useCallback(async () => {
     const text = input.trim()
-    if (!text || !activeSessionId) return
+    const hasImages = pendingImages.length > 0
+    if ((!text && !hasImages) || !activeSessionId) return
     setInput('')
     setSending(true)
-    // optimistic user message, then dispatch real events as they stream in
+    const images = pendingImages
+    setPendingImages([])
+    // optimistic user message (text + image count), then real events stream in
     messageStore.dispatch({
       type: 'message',
       id: `local:${Date.now()}`,
       role: 'user',
-      content: text,
+      content: text + (images.length > 0 ? `\n\n[📷 ${images.length} 张图片]` : ''),
       ts: Date.now()
     })
     try {
-      await window.desktop.agentSend(activeSessionId, text)
+      const res = await window.desktop.agentSend(
+        activeSessionId,
+        text,
+        images.map((im) => ({ name: im.name, path: im.path }))
+      )
+      if (!res.ok) {
+        messageStore.dispatch({
+          type: 'error',
+          id: `local-err:${Date.now()}`,
+          code: 'unknown',
+          message: res.error ?? 'send failed',
+          retryable: false
+        })
+      } else if (res.value?.rejected?.length) {
+        messageStore.dispatch({
+          type: 'error',
+          id: `local-err:${Date.now()}`,
+          code: 'unknown',
+          message: `部分图片被拒绝: ${res.value.rejected.map((r) => r.reason).join('; ')}`,
+          retryable: false
+        })
+      }
     } catch (err) {
       messageStore.dispatch({
         type: 'error',
@@ -224,7 +250,7 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
     } finally {
       setSending(false)
     }
-  }, [input, activeSessionId])
+  }, [input, activeSessionId, pendingImages])
 
   const onCancel = useCallback(async () => {
     if (!activeSessionId) return
@@ -232,7 +258,7 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
   }, [activeSessionId])
 
   const { colors, space, radius, font } = tokens
-  const canSend = input.trim().length > 0 && activeSessionId !== null && !sending
+  const canSend = (input.trim().length > 0 || pendingImages.length > 0) && activeSessionId !== null && !sending
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -266,6 +292,14 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
       </div>
 
       <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: space.md }}>
+        <ImageAttachments
+          tokens={tokens}
+          images={pendingImages}
+          onAdd={(imgs) => setPendingImages((prev) => [...prev, ...imgs])}
+          onRemove={(id) => setPendingImages((prev) => prev.filter((im) => im.id !== id))}
+          onClear={() => setPendingImages([])}
+          disabled={activeSessionId === null || sending}
+        />
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -293,7 +327,7 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
         />
         <div style={{ display: 'flex', gap: space.sm, marginTop: space.sm }}>
           <button onClick={() => void onSend()} disabled={!canSend}>
-            {sending ? 'Sending…' : 'Send'}
+            {sending ? 'Sending…' : pendingImages.length > 0 ? `Send (文 + ${pendingImages.length} 图)` : 'Send'}
           </button>
           {streamRunning && (
             <button className="ghost" onClick={() => void onCancel()}>

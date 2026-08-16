@@ -68,8 +68,12 @@ const api = {
   sessionArchive: (sessionId: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('sessions:archive', sessionId),
 
   // agent stream (M3)
-  agentSend: (sessionId: string, text: string): Promise<SessionOpResult<{ accepted: boolean }>> =>
-    ipcRenderer.invoke('agent:send', sessionId, text),
+  agentSend: (
+    sessionId: string,
+    text: string,
+    imagePaths?: Array<{ name: string; path: string }>
+  ): Promise<SessionOpResult<{ accepted: boolean; images?: number; rejected?: Array<{ index: number; reason: string }>; resized?: number }>> =>
+    ipcRenderer.invoke('agent:send', sessionId, text, imagePaths),
   agentCancel: (sessionId: string): Promise<SessionOpResult<{ accepted: boolean }>> =>
     ipcRenderer.invoke('agent:cancel', sessionId),
   agentSetActiveSession: (sessionId: string | null): Promise<{ ok: boolean }> =>

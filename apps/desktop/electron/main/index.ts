@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isAllowedNavigation } from '../navigation-guard'
 import { KeyVault } from '../keys/vault'
+import { intakeImages } from '../attachments/image-intake'
 import { SessionAdapter } from '../adapter/session-adapter'
 import { RpcClient } from '../adapter/rpc-client'
 import { StreamBridge } from '../adapter/stream-bridge'
@@ -423,9 +424,37 @@ ipcMain.handle('sessions:archive', (_e, sessionId: string) => {
 
 // --- agent IPC (M3): prompt/cancel + active session for the live stream ---
 
-ipcMain.handle('agent:send', (_e, sessionId: string, text: string) =>
-  withAdapter((a) => a.prompt(sessionId, text).then(() => ({ accepted: true as const })))
-)
+ipcMain.handle('agent:send', async (_e, sessionId: string, text: string, imagePaths?: Array<{ name: string; path: string }>) => {
+  const adapter = ensureSessionAdapter()
+  if (!adapter) return { ok: false, error: 'runtime not ready' }
+  try {
+    if (imagePaths && imagePaths.length > 0) {
+      const intake = await intakeImages(imagePaths)
+      if (!intake.ok) return { ok: false, error: intake.error }
+      if (intake.images.length === 0) {
+        return { ok: false, error: `no valid images: ${intake.rejected.map((r) => r.reason).join('; ')}` }
+      }
+      await adapter.promptWithImages(
+        sessionId,
+        text,
+        intake.images.map((im) => ({ name: im.name, mediaType: im.mediaType, dataB64: im.dataB64 }))
+      )
+      return {
+        ok: true,
+        value: {
+          accepted: true,
+          images: intake.images.length,
+          rejected: intake.rejected,
+          resized: intake.images.filter((im) => im.resized).length
+        }
+      }
+    }
+    await adapter.prompt(sessionId, text)
+    return { ok: true, value: { accepted: true } }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+})
 ipcMain.handle('agent:cancel', (_e, sessionId: string) =>
   withAdapter((a) => a.cancel(sessionId).then(() => ({ accepted: true as const })))
 )

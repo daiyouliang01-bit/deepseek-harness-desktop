@@ -100,6 +100,25 @@ export class SessionAdapter {
     })
   }
 
+  /**
+   * Send a prompt with image attachments (M1). Images are preflighted and
+   * base64-encoded by the caller (main process); content parts include
+   * text + image parts. Returns the intake result for UI feedback.
+   */
+  async promptWithImages(
+    sessionId: string,
+    text: string,
+    images: Array<{ name: string; mediaType: string; dataB64: string }>,
+    mode: 'queue' | 'steer' = 'steer'
+  ): Promise<void> {
+    const content: Array<Record<string, unknown>> = []
+    if (text.trim()) content.push({ type: 'text', text })
+    for (const img of images) {
+      content.push({ type: 'image', mediaType: img.mediaType, data: img.dataB64, name: img.name })
+    }
+    await this.client.unary<{ accepted: true }>('session.prompt', { sessionId, mode, content })
+  }
+
   /** Cancel a session's active turn (pending inbox work resumes FIFO). */
   async cancel(sessionId: string): Promise<void> {
     await this.client.unary<{ accepted: true }>('session.cancel', { sessionId })
