@@ -6,6 +6,7 @@ import { isAllowedNavigation } from '../navigation-guard'
 import { KeyVault } from '../keys/vault'
 import { SessionAdapter } from '../adapter/session-adapter'
 import { RpcClient } from '../adapter/rpc-client'
+import { StreamBridge } from '../adapter/stream-bridge'
 import { SessionStore } from '@dshd/session-store'
 import { buildAppMenuTemplate } from '../menu'
 import { RuntimeNotifier } from '../notifications'
@@ -191,8 +192,9 @@ const runtime = new HarnessProcess({
   onOutput: logLine
 })
 
-// --- session adapter (M2): wire client + local cache, rebuilt per runtime ---
+// --- session adapter + stream bridge (M2/M3): wire client + live events ---
 let sessionAdapter: SessionAdapter | null = null
+let streamBridge: StreamBridge | null = null
 
 function ensureSessionAdapter(): SessionAdapter | null {
   const status = runtime.getStatus()
@@ -204,7 +206,21 @@ function ensureSessionAdapter(): SessionAdapter | null {
     runtimeVersion: process.env.npm_package_version
   })
   sessionAdapter = new SessionAdapter({ client, store })
+
+  // Start the live mux stream → push mapped protocol events to the renderer.
+  streamBridge = new StreamBridge({
+    client,
+    onEvents: (events) => mainWindow?.webContents.send('agent:event', events),
+    onClose: (err) => mainWindow?.webContents.send('agent:stream-state', { running: false, error: err?.message })
+  })
+  void streamBridge.start()
+  mainWindow?.webContents.send('agent:stream-state', { running: true })
   return sessionAdapter
+}
+
+function stopStreamBridge(): void {
+  streamBridge?.stop()
+  streamBridge = null
 }
 
 let uiLoaded = false // whether the official Web UI is currently loaded
@@ -247,6 +263,7 @@ runtime.on('statusChange', (status: RuntimeStatus) => {
     void mainWindow.loadURL(status.ready.url)
   } else if (status.state === 'error' || status.state === 'stopped') {
     sessionAdapter = null // runtime gone → adapter must rebuild on next ready
+    stopStreamBridge()
     if (uiLoaded) {
       // Runtime died while the Web UI was loaded → go back to the shell
       // renderer (loading/recovery screen).
@@ -385,6 +402,20 @@ ipcMain.handle('sessions:archive', (_e, sessionId: string) => {
   adapter.archive(sessionId)
   return { ok: true }
 })
+
+// --- agent IPC (M3): prompt/cancel + active session for the live stream ---
+
+ipcMain.handle('agent:send', (_e, sessionId: string, text: string) =>
+  withAdapter((a) => a.prompt(sessionId, text).then(() => ({ accepted: true as const })))
+)
+ipcMain.handle('agent:cancel', (_e, sessionId: string) =>
+  withAdapter((a) => a.cancel(sessionId).then(() => ({ accepted: true as const })))
+)
+ipcMain.handle('agent:set-active-session', (_e, sessionId: string | null) => {
+  streamBridge?.setActiveSession(sessionId)
+  return { ok: true }
+})
+ipcMain.handle('agent:stream-state', () => ({ running: streamBridge?.isRunning() ?? false }))
 
 // --- auto-update IPC (Task 5.3) ---
 

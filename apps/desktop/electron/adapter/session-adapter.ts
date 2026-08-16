@@ -91,6 +91,20 @@ export class SessionAdapter {
     return res.title
   }
 
+  /** Send a prompt to a session (mode 'steer' interrupts; 'queue' enqueues). */
+  async prompt(sessionId: string, text: string, mode: 'queue' | 'steer' = 'steer'): Promise<void> {
+    await this.client.unary<{ accepted: true }>('session.prompt', {
+      sessionId,
+      mode,
+      content: [{ type: 'text', text }]
+    })
+  }
+
+  /** Cancel a session's active turn (pending inbox work resumes FIFO). */
+  async cancel(sessionId: string): Promise<void> {
+    await this.client.unary<{ accepted: true }>('session.cancel', { sessionId })
+  }
+
   /**
    * Search message content across sessions. Remote search may be disabled in
    * the deployment (session-query index openAt "never") — fall back to the

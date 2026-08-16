@@ -56,7 +56,7 @@ export function AppShell({
               <ConversationsPanel tokens={tokens} activeSessionId={activeSessionId} onSelect={setActiveSessionId} />
             </div>
             <div style={{ flex: 2 }}>
-              <ChatView tokens={tokens} />
+              <ChatView tokens={tokens} activeSessionId={activeSessionId} />
             </div>
           </div>
         )}

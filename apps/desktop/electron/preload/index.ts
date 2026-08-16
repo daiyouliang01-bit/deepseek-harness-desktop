@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { AgentEvent } from '@dshd/protocol'
 import type { KeyRecord } from '../keys/vault'
 import type { RuntimeStatus } from '../runtime/runtime-types'
 import type { UpdateState } from '../updater/update-manager'
@@ -65,6 +66,29 @@ const api = {
     ipcRenderer.invoke('sessions:rename', sessionId, title),
   sessionSearch: (query: string): Promise<SessionOpResult<SessionSearchResult[]>> => ipcRenderer.invoke('sessions:search', query),
   sessionArchive: (sessionId: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('sessions:archive', sessionId),
+
+  // agent stream (M3)
+  agentSend: (sessionId: string, text: string): Promise<SessionOpResult<{ accepted: boolean }>> =>
+    ipcRenderer.invoke('agent:send', sessionId, text),
+  agentCancel: (sessionId: string): Promise<SessionOpResult<{ accepted: boolean }>> =>
+    ipcRenderer.invoke('agent:cancel', sessionId),
+  agentSetActiveSession: (sessionId: string | null): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('agent:set-active-session', sessionId),
+  agentStreamState: (): Promise<{ running: boolean }> => ipcRenderer.invoke('agent:stream-state'),
+  onAgentEvent: (cb: (events: AgentEvent[]) => void): (() => void) => {
+    const listener = (_event: unknown, events: AgentEvent[]) => cb(events)
+    ipcRenderer.on('agent:event', listener)
+    return () => {
+      ipcRenderer.removeListener('agent:event', listener)
+    }
+  },
+  onAgentStreamState: (cb: (state: { running: boolean; error?: string }) => void): (() => void) => {
+    const listener = (_event: unknown, state: { running: boolean; error?: string }) => cb(state)
+    ipcRenderer.on('agent:stream-state', listener)
+    return () => {
+      ipcRenderer.removeListener('agent:stream-state', listener)
+    }
+  },
 
   onRuntimeStatus: (callback: (status: RuntimeStatus) => void): (() => void) => {
     const listener = (_event: unknown, status: RuntimeStatus) => callback(status)
