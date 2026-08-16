@@ -115,3 +115,63 @@ describe('StreamBridge', () => {
     expect(bridge.rpcIdFor('q1')).toBe('rpc-q') // untouched
   })
 })
+
+describe('StreamBridge reconnect (M5)', () => {
+  it('reconnects after a stream failure with backoff and backfills missed events', async () => {
+    const onEvents = vi.fn()
+    const onState = vi.fn()
+    let calls = 0
+    const client = {
+      openSocketStream: async function* () {
+        calls++
+        if (calls === 1) throw new Error('socket drop')
+        // reconnected: only the baseline arrives live; everything missed
+        // while disconnected must come from the history backfill
+        yield frame({ type: 'session/subscribed', sessionId: 's1', lastSeq: 0 })
+      },
+      unary: async (method: string) => {
+        // history tail for backfill after reconnect
+        if (method === 'session.history') {
+          return {
+            events: [
+              { event: { type: 'assistant/chunk', seq: 1, time: 1, data: { chunk: { delta: 'hi' } } } },
+              { event: { type: 'assistant/chunk', seq: 2, time: 1, data: { chunk: { delta: '!' } } } }
+            ],
+            hasMore: false
+          }
+        }
+        throw new Error('unexpected ' + method)
+      }
+    } as unknown as RpcClient
+
+    const bridge = new StreamBridge({ client, onEvents, onState, batchMs: 1, backoffMs: 5, maxReconnects: 3 })
+    bridge.setActiveSession('s1')
+    await bridge.start()
+    await new Promise((r) => setTimeout(r, 20))
+
+    // reconnect happened
+    expect(calls).toBeGreaterThanOrEqual(2)
+    expect(onState.mock.calls.some((c) => c[0].reconnecting === true)).toBe(true)
+
+    const all = onEvents.mock.calls.flat(2) as AgentEvent[]
+    // backfill replayed seq1 + seq2 exactly once each
+    const texts = all.filter((e) => e.type === 'delta').map((e) => (e as { text: string }).text)
+    expect(texts.filter((t) => t === 'hi').length).toBe(1)
+    expect(texts.filter((t) => t === '!').length).toBe(1)
+  })
+
+  it('gives up after maxReconnects', async () => {
+    const onEvents = vi.fn()
+    let calls = 0
+    const client = {
+      openSocketStream: async function* () {
+        calls++
+        throw new Error('always down')
+      }
+    } as unknown as RpcClient
+    const bridge = new StreamBridge({ client, onEvents, batchMs: 1, backoffMs: 2, maxReconnects: 2 })
+    await bridge.start()
+    expect(calls).toBe(3) // initial + 2 retries
+    expect(bridge.isRunning()).toBe(false)
+  })
+})
