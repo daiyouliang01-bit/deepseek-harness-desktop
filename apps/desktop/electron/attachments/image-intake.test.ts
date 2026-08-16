@@ -121,4 +121,22 @@ describe('intakeImages', () => {
     expect(res.ok).toBe(false)
     if (!res.ok) expect(res.error).toMatch(/message limit/)
   })
+
+  it('strips EXIF metadata on the non-resize path (privacy)', async () => {
+    const sharp = (await import('sharp')).default
+    // build a small jpeg WITH exif (GPS-ish tag)
+    const jpeg = await sharp({ create: { width: 64, height: 64, channels: 3, background: { r: 10, g: 200, b: 30 } } })
+      .jpeg()
+      .withMetadata({ exif: { IFD0: { Copyright: 'Secret GPS location' } } })
+      .toBuffer()
+    const p = join(dir, 'with-exif.jpg')
+    writeFileSync(p, jpeg)
+    const res = await intakeImages([{ name: 'with-exif.jpg', path: p }])
+    expect(res.ok).toBe(true)
+    if (res.ok) {
+      const outMeta = await sharp(Buffer.from(res.images[0].dataB64, 'base64')).metadata()
+      // sharp metadata exposes exif only when present
+      expect(outMeta.exif).toBeUndefined()
+    }
+  })
 })

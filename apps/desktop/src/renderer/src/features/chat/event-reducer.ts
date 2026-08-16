@@ -12,6 +12,8 @@ export interface ChatMessage {
   toolCalls: ToolCallState[]
   /** errors attached to this turn */
   errors: ChatError[]
+  /** image attachment references (M3) */
+  images?: Array<{ attachmentId: string; name?: string; width?: number; height?: number }>
   ts: number
 }
 
@@ -77,7 +79,7 @@ export function reduceEvent(state: ChatState, event: AgentEvent): ChatState {
           ...state,
           messages: [
             ...state.messages,
-            { id: event.id, role: 'user', content: event.content, streaming: false, toolCalls: [], errors: [], ts: event.ts }
+            { id: event.id, role: 'user', content: event.content, streaming: false, toolCalls: [], errors: [], images: event.images, ts: event.ts }
           ]
         }
       }

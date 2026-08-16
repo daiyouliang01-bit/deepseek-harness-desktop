@@ -31,7 +31,7 @@ function ToolCallRow({ call, tokens }: { call: ToolCallState; tokens: Tokens }):
   )
 }
 
-function MessageRow({ msg, tokens }: { msg: ChatMessage; tokens: Tokens }): React.JSX.Element {
+function MessageRow({ msg, tokens, sessionId }: { msg: ChatMessage; tokens: Tokens; sessionId: string | null }): React.JSX.Element {
   const { colors, space, radius } = tokens
   const align = msg.role === 'user' ? 'flex-end' : 'flex-start'
   const bg = msg.role === 'user' ? colors.surfaceAlt : colors.surface
@@ -50,6 +50,13 @@ function MessageRow({ msg, tokens }: { msg: ChatMessage; tokens: Tokens }): Reac
       >
         {msg.content}
         {msg.streaming && <span style={{ color: colors.textMuted }}>▋</span>}
+        {msg.images && msg.images.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: space.sm, marginTop: space.sm }}>
+            {msg.images.map((img) => (
+              <AttachmentImage key={img.attachmentId} attachmentId={img.attachmentId} name={img.name} tokens={tokens} sessionId={sessionId} />
+            ))}
+          </div>
+        )}
         {msg.toolCalls.map((tc) => (
           <ToolCallRow key={tc.callId} call={tc} tokens={tokens} />
         ))}
@@ -61,6 +68,75 @@ function MessageRow({ msg, tokens }: { msg: ChatMessage; tokens: Tokens }): Reac
         ))}
       </div>
     </div>
+  )
+}
+
+/** M3 — lazily read back an image attachment and render it (click to zoom). */
+function AttachmentImage({
+  attachmentId,
+  name,
+  tokens,
+  sessionId
+}: {
+  attachmentId: string
+  name?: string
+  tokens: Tokens
+  sessionId: string | null
+}): React.JSX.Element {
+  const { colors, radius } = tokens
+  const [src, setSrc] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [zoomed, setZoomed] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    if (!sessionId) return
+    void window.desktop.agentAttachment(sessionId, attachmentId).then((res) => {
+      if (cancelled) return
+      if (res.ok && res.value) setSrc(`data:${res.value.mediaType};base64,${res.value.data}`)
+      else setFailed(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId, attachmentId])
+
+  if (failed) {
+    return (
+      <div style={{ color: colors.danger, fontSize: 12, border: `1px solid ${colors.border}`, borderRadius: radius.sm, padding: '4px 8px' }}>
+        图片不可用（附件回读失败）
+      </div>
+    )
+  }
+  if (!src) {
+    return <div style={{ width: 96, height: 96, borderRadius: radius.sm, background: 'rgba(128,128,128,0.15)' }} title={name} />
+  }
+  return (
+    <>
+      <img
+        src={src}
+        alt={name ?? 'image'}
+        onClick={() => setZoomed(true)}
+        style={{ maxWidth: 220, maxHeight: 160, borderRadius: radius.sm, cursor: 'zoom-in', objectFit: 'contain', border: `1px solid ${colors.border}` }}
+      />
+      {zoomed && (
+        <div
+          onClick={() => setZoomed(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            cursor: 'zoom-out'
+          }}
+        >
+          <img src={src} alt={name ?? 'image'} style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain' }} />
+        </div>
+      )}
+    </>
   )
 }
 
@@ -276,7 +352,7 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
           </p>
         )}
         {state.messages.map((m) => (
-          <MessageRow key={m.id + m.ts} msg={m} tokens={tokens} />
+          <MessageRow key={m.id + m.ts} msg={m} tokens={tokens} sessionId={activeSessionId} />
         ))}
         {state.approvals.map((a) => (
           <ApprovalCard

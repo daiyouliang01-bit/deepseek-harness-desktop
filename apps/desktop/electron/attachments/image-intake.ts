@@ -110,6 +110,8 @@ export async function intakeImages(
       }
 
       // auto-resize oversized (long edge > 2048 or > 5MB after encode)
+      // and strip EXIF on every path (privacy, P1): sharp re-encodes without
+      // metadata unless withMetadata() is requested.
       let outBuf = bytes
       let resized = false
       const longEdge = Math.max(width, height)
@@ -124,6 +126,9 @@ export async function intakeImages(
         const m2 = await sharp(outBuf).metadata()
         width = m2.width ?? newW
         height = m2.height ?? newH
+      } else {
+        // no resize needed, but still strip EXIF/GPS metadata (privacy)
+        outBuf = await sharp(bytes, { animated: mediaType === 'image/gif' }).toBuffer()
       }
 
       images.push({

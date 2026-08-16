@@ -15,6 +15,8 @@ export interface MessageEvent {
   role: 'user' | 'assistant'
   content: string
   ts: number
+  /** Image attachment references embedded in the message (M3). */
+  images?: Array<{ attachmentId: string; name?: string; width?: number; height?: number }>
 }
 
 export interface DeltaEvent {

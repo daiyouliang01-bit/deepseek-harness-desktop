@@ -487,6 +487,16 @@ ipcMain.handle('agent:answer', async (_e, sessionId: string, questionId: string,
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 })
+ipcMain.handle('agent:attachment', async (_e, sessionId: string, attachmentId: string) => {
+  const adapter = ensureSessionAdapter()
+  if (!adapter) return { ok: false, error: 'runtime not ready' }
+  try {
+    const att = await adapter.attachment(sessionId, attachmentId)
+    return { ok: true, value: att }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+})
 
 // --- auto-update IPC (Task 5.3) ---
 

@@ -25,12 +25,14 @@ export function mapSessionEvent(frame: SessionEventFrame): AgentEvent | null {
   switch (event.type) {
     case 'user/message': {
       const content = extractText(event.data)
+      const images = extractImages(event.data)
       return {
         type: 'message',
         id: `${frame.sessionId}:${event.seq}`,
         role: 'user',
         content,
-        ts: event.time
+        ts: event.time,
+        images: images.length > 0 ? images : undefined
       }
     }
     case 'assistant/chunk': {
@@ -90,6 +92,30 @@ export function mapSessionEvent(frame: SessionEventFrame): AgentEvent | null {
       // consumer's concern (logged by the connection layer).
       return null
   }
+}
+
+/**
+ * Extract image attachment references from a message event's content blocks
+ * (M3): `{type:'image', attachment: {attachmentId, name?, width?, height?}}`.
+ */
+function extractImages(data: Record<string, unknown>): Array<{ attachmentId: string; name?: string; width?: number; height?: number }> {
+  const content = data.content
+  if (!Array.isArray(content)) return []
+  const out: Array<{ attachmentId: string; name?: string; width?: number; height?: number }> = []
+  for (const part of content) {
+    if (part && typeof part === 'object') {
+      const p = part as { type?: string; attachment?: { attachmentId?: unknown; name?: unknown; width?: unknown; height?: unknown } }
+      if (p.type === 'image' && p.attachment && typeof p.attachment.attachmentId === 'string') {
+        out.push({
+          attachmentId: p.attachment.attachmentId,
+          name: typeof p.attachment.name === 'string' ? p.attachment.name : undefined,
+          width: typeof p.attachment.width === 'number' ? p.attachment.width : undefined,
+          height: typeof p.attachment.height === 'number' ? p.attachment.height : undefined
+        })
+      }
+    }
+  }
+  return out
 }
 
 /** Extract displayable text from a message event's data (best effort). */

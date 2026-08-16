@@ -124,6 +124,15 @@ export class SessionAdapter {
     await this.client.unary<{ accepted: true }>('session.cancel', { sessionId })
   }
 
+  /** Read a durable image attachment back (M3) — host verifies the session log references the id. */
+  async attachment(sessionId: string, attachmentId: string): Promise<{ data: string; mediaType: string; name?: string }> {
+    const res = await this.client.unary<{ attachment: { mediaType: string; name?: string }; data: string }>(
+      'session.attachment',
+      { sessionId, attachmentId }
+    )
+    return { data: res.data, mediaType: res.attachment.mediaType, name: res.attachment.name }
+  }
+
   /** Answer a pending approval (echo the server-request's rpcId). */
   async respondApproval(rpcId: string, sessionId: string, approvalId: string, outcome: 'allowed-once' | 'rejected'): Promise<void> {
     await this.client.respond({
