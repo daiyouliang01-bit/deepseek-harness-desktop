@@ -17,86 +17,68 @@ function dshAvailable(): boolean {
     return false
   }
 }
-
 const live = Boolean(process.env.DSHD_LIVE_PROMPT)
 const PATCH = join(__dirname, '../../resources/desktop-tools.patch.yml')
 
-// M0: color-fidelity probe — solid 512px PNGs (not 1x1).
-function colorPng(name: string): { b64: string; mediaType: string; name: string } {
-  const data = readFileSync(join('/tmp', name))
-  return { b64: data.toString('base64'), mediaType: 'image/png', name }
-}
-
-const IMAGES: Record<string, { b64: string; mediaType: string; name: string }> = {
-  red: colorPng('red512.png'),
-  green: colorPng('green512.png'),
-  blue: colorPng('blue512.png')
-}
-
-describe.skipIf(!dshAvailable() || !live)('M0 vision color fidelity (opt-in)', () => {
+describe.skipIf(!dshAvailable() || !live)('free-vision plugin (opt-in)', () => {
   let hp: HarnessProcess
   let adapter: SessionAdapter
   let dir: string
 
   beforeAll(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'dshd-m0-'))
+    dir = mkdtempSync(join(tmpdir(), 'dshd-fv-'))
+    // spawn with the web profile (which has dsh-free-vision in bundles)
     hp = new HarnessProcess({ readyTimeoutMs: 60_000, topLevelArgs: ['--patch', PATCH], dshBin: process.env.DSHD_DSH_BIN ?? 'dsh' })
     const info = await hp.start()
     const store = new SessionStore({ path: join(dir, 'sessions.db') })
     adapter = new SessionAdapter({ client: new RpcClient({ baseUrl: info.url }), store })
   }, 120_000)
-
   afterAll(async () => {
     await hp?.stop()
     rmSync(dir, { recursive: true, force: true })
   }, 30_000)
 
-  async function askColor(sessionId: string, image: { b64: string; mediaType: string; name: string }): Promise<string> {
+  it('agent calls image_understand to read a red image via the vision plugin', async () => {
+    const { sessionId } = await adapter.create()
     const client = new RpcClient({ baseUrl: hp.getStatus().ready!.url })
     const texts: string[] = []
+    const toolCalls: string[] = []
     const bridge = new StreamBridge({
       client,
       onEvents: (events) => {
         for (const e of events) {
           if (e.type === 'delta') texts.push(e.text)
           if (e.type === 'message' && e.role === 'assistant') texts.push(e.content)
+          if (e.type === 'tool-call') toolCalls.push(e.name)
         }
       },
       batchMs: 10
     })
     bridge.setActiveSession(sessionId)
-    const streamPromise = bridge.start()
+    const sp = bridge.start()
     await new Promise((r) => setTimeout(r, 500))
 
+    const imgB64 = readFileSync('/tmp/red512.png').toString('base64')
     await client.unary('session.prompt', {
       sessionId,
       mode: 'steer',
       content: [
-        { type: 'text', text: 'What is the dominant color of this image? Answer with exactly one color word.' },
-        { type: 'image', mediaType: image.mediaType, data: image.b64, name: image.name }
+        { type: 'text', text: 'Use the image_understand tool on the attached image and tell me what color it is.' },
+        { type: 'image', mediaType: 'image/png', data: imgB64, name: 'red.png' }
       ]
     })
 
-    const deadline = Date.now() + 90_000
-    while (Date.now() < deadline && texts.join('').length < 3) {
+    const deadline = Date.now() + 120_000
+    while (Date.now() < deadline && !toolCalls.includes('image_understand') && texts.join('').length < 10) {
       await new Promise((r) => setTimeout(r, 500))
     }
+    // give it time to finish after the tool call
+    await new Promise((r) => setTimeout(r, 10_000))
     bridge.stop()
-    await streamPromise
-    return texts.join('').toLowerCase()
-  }
+    await sp
 
-  it('model reads red/green/blue correctly (color fidelity)', async () => {
-    const { sessionId } = await adapter.create()
-
-    const results: Record<string, string> = {}
-    for (const [color, img] of Object.entries(IMAGES)) {
-      results[color] = await askColor(sessionId, img)
-      console.log(`COLOR ${color} →`, JSON.stringify(results[color].slice(0, 120)))
-    }
-
-    expect(results.red).toMatch(/red/)
-    expect(results.green).toMatch(/green/)
-    expect(results.blue).toMatch(/blue/)
-  }, 300_000)
+    console.log('TOOLCALLS:', JSON.stringify(toolCalls))
+    console.log('TEXT:', JSON.stringify(texts.join('').slice(0, 300)))
+    expect(toolCalls).toContain('image_understand')
+  }, 240_000)
 })

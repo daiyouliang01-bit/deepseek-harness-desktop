@@ -299,6 +299,8 @@ async function startRuntime(): Promise<RuntimeStatus> {
 }
 
 // --- window creation ---
+const APP_ICON_PNG = join(__dirname, '../../build/icon.png')
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -307,6 +309,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     title: 'DeepSeek Harness Desktop',
+    icon: APP_ICON_PNG, // dev-mode window/dock icon (packaged uses the bundle)
     backgroundColor: '#1e1e2e',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
