@@ -146,6 +146,14 @@ export function reduceEvent(state: ChatState, event: AgentEvent): ChatState {
       }
     }
 
+    case 'approval-resolved': {
+      return { ...state, approvals: state.approvals.filter((a) => a.id !== event.id) }
+    }
+
+    case 'question-resolved': {
+      return { ...state, questions: state.questions.filter((q) => q.id !== event.id) }
+    }
+
     case 'error': {
       const err: ChatError = { code: event.code, message: event.message, retryable: event.retryable, hint: event.hint }
       const last = lastMessage(state)

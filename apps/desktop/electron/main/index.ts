@@ -416,6 +416,30 @@ ipcMain.handle('agent:set-active-session', (_e, sessionId: string | null) => {
   return { ok: true }
 })
 ipcMain.handle('agent:stream-state', () => ({ running: streamBridge?.isRunning() ?? false }))
+ipcMain.handle('agent:approve', async (_e, sessionId: string, approvalId: string, outcome: 'allowed-once' | 'rejected') => {
+  const adapter = ensureSessionAdapter()
+  const rpcId = streamBridge?.rpcIdFor(approvalId)
+  if (!adapter || !rpcId) return { ok: false, error: 'approval not pending or runtime not ready' }
+  try {
+    await adapter.respondApproval(rpcId, sessionId, approvalId, outcome)
+    streamBridge?.dropPending(approvalId)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+})
+ipcMain.handle('agent:answer', async (_e, sessionId: string, questionId: string, selected: string[]) => {
+  const adapter = ensureSessionAdapter()
+  const rpcId = streamBridge?.rpcIdFor(questionId)
+  if (!adapter || !rpcId) return { ok: false, error: 'question not pending or runtime not ready' }
+  try {
+    await adapter.respondQuestion(rpcId, sessionId, { answers: [{ id: questionId, selected }] })
+    streamBridge?.dropPending(questionId)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+})
 
 // --- auto-update IPC (Task 5.3) ---
 

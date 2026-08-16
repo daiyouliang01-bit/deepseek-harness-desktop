@@ -39,6 +39,22 @@ export class StreamBridge {
 
   /** rpcId ledger for answerable frames (M4). */
   readonly pending: Map<string, PendingServerRequest> = new Map()
+  /** reverse index: approvalId | questionRpcId → rpcId */
+  private readonly byId: Map<string, string> = new Map()
+
+  /** Resolve the rpcId for a pending approval/question by its resource id. */
+  rpcIdFor(resourceId: string): string | undefined {
+    return this.byId.get(resourceId)
+  }
+
+  /** Drop a ledger entry after a successful respond. */
+  dropPending(resourceId: string): void {
+    const rpcId = this.byId.get(resourceId)
+    if (rpcId) {
+      this.byId.delete(resourceId)
+      this.pending.delete(rpcId)
+    }
+  }
 
   constructor(options: StreamBridgeOptions) {
     this.client = options.client
@@ -98,19 +114,37 @@ export class StreamBridge {
       case 'approval/requested': {
         if (this.activeSessionId && payload.sessionId !== this.activeSessionId) return
         const res = mapControlFrame(payload, frame.rpcId)
-        for (const p of res.pending) this.pending.set(p.rpcId, p)
+        for (const p of res.pending) {
+          this.pending.set(p.rpcId, p)
+          if (p.approvalId) this.byId.set(p.approvalId, p.rpcId)
+        }
         for (const e of res.events) this.enqueue(e)
         return
       }
       case 'question/requested': {
         if (this.activeSessionId && payload.sessionId !== this.activeSessionId) return
         const res = mapControlFrame(payload, frame.rpcId)
-        for (const p of res.pending) this.pending.set(p.rpcId, p)
+        for (const p of res.pending) {
+          this.pending.set(p.rpcId, p)
+          if (p.questionRpcId) this.byId.set(p.questionRpcId, p.rpcId)
+        }
         for (const e of res.events) this.enqueue(e)
         return
       }
+      case 'approval/resolved': {
+        if (this.activeSessionId && payload.sessionId !== this.activeSessionId) return
+        this.dropPending(payload.approvalId)
+        this.enqueue({ type: 'approval-resolved', id: payload.approvalId, outcome: payload.outcome })
+        return
+      }
+      case 'question/resolved': {
+        if (this.activeSessionId && payload.sessionId !== this.activeSessionId) return
+        this.dropPending(payload.questionRpcId)
+        this.enqueue({ type: 'question-resolved', id: payload.questionRpcId, outcome: payload.outcome })
+        return
+      }
       default:
-        return // host-level frames, resolved frames, queue snapshots: ignored in M3
+        return // host-level frames, queue snapshots: ignored in M3/M4
     }
   }
 

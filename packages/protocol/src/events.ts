@@ -80,6 +80,20 @@ export interface QuestionEvent {
   multiSelect?: boolean
 }
 
+/** An approval was resolved (allowed/rejected/cancelled) — clear the pending card. */
+export interface ApprovalResolvedEvent {
+  type: 'approval-resolved'
+  id: string
+  outcome: 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
+}
+
+/** A question was answered/cancelled — clear the pending card. */
+export interface QuestionResolvedEvent {
+  type: 'question-resolved'
+  id: string
+  outcome: 'answered' | 'cancelled'
+}
+
 export interface UnknownEvent {
   type: 'unknown'
   rawType: string
@@ -96,6 +110,8 @@ export type AgentEvent =
   | ErrorEvent
   | CompletionEvent
   | QuestionEvent
+  | ApprovalResolvedEvent
+  | QuestionResolvedEvent
   | UnknownEvent
 
 const KNOWN_TYPES = new Set([
@@ -107,7 +123,9 @@ const KNOWN_TYPES = new Set([
   'approval-request',
   'error',
   'completion',
-  'question'
+  'question',
+  'approval-resolved',
+  'question-resolved'
 ])
 
 export type DecodeResult =
@@ -210,6 +228,18 @@ export function decodeEventObject(parsed: unknown): DecodeResult {
         question: String(o.question),
         options: Array.isArray(o.options) ? (o.options as Array<{ label: string; value: unknown }>) : undefined,
         multiSelect: typeof o.multiSelect === 'boolean' ? o.multiSelect : undefined
+      }))
+    case 'approval-resolved':
+      return requireFields(obj, ['outcome'], (o) => ({
+        type: 'approval-resolved' as const,
+        id,
+        outcome: String(o.outcome) as 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
+      }))
+    case 'question-resolved':
+      return requireFields(obj, ['outcome'], (o) => ({
+        type: 'question-resolved' as const,
+        id,
+        outcome: String(o.outcome) as 'answered' | 'cancelled'
       }))
     default:
       return { ok: false, reason: `unhandled known type '${obj.type}'` }

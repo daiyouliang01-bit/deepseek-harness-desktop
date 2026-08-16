@@ -105,6 +105,24 @@ export class SessionAdapter {
     await this.client.unary<{ accepted: true }>('session.cancel', { sessionId })
   }
 
+  /** Answer a pending approval (echo the server-request's rpcId). */
+  async respondApproval(rpcId: string, sessionId: string, approvalId: string, outcome: 'allowed-once' | 'rejected'): Promise<void> {
+    await this.client.respond({
+      type: 'client-response',
+      rpcId,
+      result: { ok: true, value: { sessionId, approvalId, outcome } }
+    })
+  }
+
+  /** Answer a pending question (echo the server-request's rpcId). */
+  async respondQuestion(rpcId: string, sessionId: string, answer: { answers: Array<{ id: string; selected: string[]; custom?: string }> }): Promise<void> {
+    await this.client.respond({
+      type: 'client-response',
+      rpcId,
+      result: { ok: true, value: { sessionId, answer } }
+    })
+  }
+
   /**
    * Search message content across sessions. Remote search may be disabled in
    * the deployment (session-query index openAt "never") — fall back to the

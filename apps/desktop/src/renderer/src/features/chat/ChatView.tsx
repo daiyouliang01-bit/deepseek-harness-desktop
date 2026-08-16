@@ -63,6 +63,113 @@ function MessageRow({ msg, tokens }: { msg: ChatMessage; tokens: Tokens }): Reac
   )
 }
 
+function ApprovalCard({
+  approval,
+  sessionId,
+  tokens
+}: {
+  approval: { id: string; permission: string; scope?: unknown }
+  sessionId: string
+  tokens: Tokens
+}): React.JSX.Element {
+  const { colors, space, radius, font } = tokens
+  const [busy, setBusy] = useState(false)
+  const decide = async (outcome: 'allowed-once' | 'rejected'): Promise<void> => {
+    setBusy(true)
+    const res = await window.desktop.agentApprove(sessionId, approval.id, outcome)
+    setBusy(false)
+    if (res.ok) {
+      messageStore.dispatch({ type: 'approval-resolved', id: approval.id, outcome })
+    }
+  }
+  return (
+    <div
+      style={{
+        background: colors.surface,
+        border: `1px solid ${colors.warn}`,
+        borderRadius: radius.md,
+        padding: `${space.sm}px ${space.md}px`,
+        marginBottom: space.md
+      }}
+    >
+      <div style={{ color: colors.warn, fontSize: font.sizeSm, marginBottom: space.xs }}>⚠ Approval requested</div>
+      <div style={{ color: colors.text, fontFamily: font.mono, fontSize: font.sizeSm, marginBottom: space.sm }}>
+        {approval.permission}
+      </div>
+      <div style={{ display: 'flex', gap: space.sm }}>
+        <button onClick={() => void decide('allowed-once')} disabled={busy}>
+          Allow once
+        </button>
+        <button className="ghost" onClick={() => void decide('rejected')} disabled={busy}>
+          Reject
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function QuestionCard({
+  question,
+  sessionId,
+  tokens
+}: {
+  question: { id: string; question: string; options?: Array<{ label: string; value: unknown }>; multiSelect?: boolean }
+  sessionId: string
+  tokens: Tokens
+}): React.JSX.Element {
+  const { colors, space, radius, font } = tokens
+  const [selected, setSelected] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  const answer = async (): Promise<void> => {
+    setBusy(true)
+    const res = await window.desktop.agentAnswer(sessionId, question.id, selected)
+    setBusy(false)
+    if (res.ok) {
+      messageStore.dispatch({ type: 'question-resolved', id: question.id, outcome: 'answered' })
+    }
+  }
+  return (
+    <div
+      style={{
+        background: colors.surface,
+        border: `1px solid ${colors.accent}`,
+        borderRadius: radius.md,
+        padding: `${space.sm}px ${space.md}px`,
+        marginBottom: space.md
+      }}
+    >
+      <div style={{ color: colors.accent, fontSize: font.sizeSm, marginBottom: space.xs }}>❓ Question</div>
+      <div style={{ color: colors.text, marginBottom: space.sm }}>{question.question}</div>
+      {question.options?.map((opt) => {
+        const on = selected.includes(opt.label)
+        return (
+          <label
+            key={opt.label}
+            style={{ display: 'block', color: colors.textMuted, fontSize: font.sizeSm, marginBottom: space.xs, cursor: 'pointer' }}
+          >
+            <input
+              type={question.multiSelect ? 'checkbox' : 'radio'}
+              name={question.id}
+              checked={on}
+              onChange={() => {
+                if (question.multiSelect) {
+                  setSelected(on ? selected.filter((s) => s !== opt.label) : [...selected, opt.label])
+                } else {
+                  setSelected([opt.label])
+                }
+              }}
+            />{' '}
+            {opt.label}
+          </label>
+        )
+      })}
+      <button onClick={() => void answer()} disabled={busy || selected.length === 0} style={{ marginTop: space.sm }}>
+        {busy ? 'Sending…' : 'Answer'}
+      </button>
+    </div>
+  )
+}
+
 /**
  * M3 chat view — renders live agent events from the stream bridge (via IPC →
  * messageStore) and sends prompts through the adapter.
@@ -145,11 +252,17 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
         {state.messages.map((m) => (
           <MessageRow key={m.id + m.ts} msg={m} tokens={tokens} />
         ))}
-        {state.approvals.length > 0 && (
-          <div style={{ color: colors.warn, fontSize: 13, marginTop: space.md }}>
-            ⏳ {state.approvals.length} approval(s) pending
-          </div>
-        )}
+        {state.approvals.map((a) => (
+          <ApprovalCard
+            key={a.id}
+            approval={a}
+            sessionId={activeSessionId ?? ''}
+            tokens={tokens}
+          />
+        ))}
+        {state.questions.map((q) => (
+          <QuestionCard key={q.id} question={q} sessionId={activeSessionId ?? ''} tokens={tokens} />
+        ))}
       </div>
 
       <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: space.md }}>

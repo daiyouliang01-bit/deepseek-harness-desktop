@@ -104,6 +104,19 @@ describe('event reducer — invariants', () => {
     expect(state.questions).toHaveLength(0)
   })
 
+  it('resolved events clear pending approvals and questions', () => {
+    let state = reduceEvents(initialState, [
+      { type: 'approval-request', id: 'a1', permission: 'tool:bash' },
+      { type: 'question', id: 'q1', question: 'Pick?' }
+    ])
+    expect(state.approvals).toHaveLength(1)
+    expect(state.questions).toHaveLength(1)
+    state = reduceEvents(state, [{ type: 'approval-resolved', id: 'a1', outcome: 'rejected' }])
+    expect(state.approvals).toHaveLength(0)
+    state = reduceEvents(state, [{ type: 'question-resolved', id: 'q1', outcome: 'cancelled' }])
+    expect(state.questions).toHaveLength(0)
+  })
+
   it('is pure: input state is not mutated', () => {
     const before = JSON.stringify(initialState)
     reduceEvents(initialState, loadFixture('tool-loop'))

@@ -72,4 +72,15 @@ describe.skipIf(!dshAvailable())('SessionAdapter ↔ real dsh (M2)', () => {
     expect(store.isArchived(sessionId)).toBe(true)
     expect(store.listConversations(100, false).map((c) => c.id)).not.toContain(sessionId)
   }, 60_000)
+
+  it('respond endpoint is live: unknown rpcId → accepted:false not-pending', async () => {
+    const client = new RpcClient({ baseUrl: hp.getStatus().ready!.url })
+    const receipt = await client.respond({
+      type: 'client-response',
+      rpcId: 'no-such-rpc',
+      result: { ok: true, value: { sessionId: 'x', approvalId: 'x', outcome: 'allowed-once' } }
+    })
+    expect(receipt.accepted).toBe(false)
+    expect(receipt.reason).toBe('not-pending')
+  }, 60_000)
 })

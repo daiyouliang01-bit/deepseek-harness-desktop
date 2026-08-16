@@ -74,6 +74,10 @@ const api = {
     ipcRenderer.invoke('agent:cancel', sessionId),
   agentSetActiveSession: (sessionId: string | null): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('agent:set-active-session', sessionId),
+  agentApprove: (sessionId: string, approvalId: string, outcome: 'allowed-once' | 'rejected'): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('agent:approve', sessionId, approvalId, outcome),
+  agentAnswer: (sessionId: string, questionId: string, selected: string[]): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('agent:answer', sessionId, questionId, selected),
   agentStreamState: (): Promise<{ running: boolean }> => ipcRenderer.invoke('agent:stream-state'),
   onAgentEvent: (cb: (events: AgentEvent[]) => void): (() => void) => {
     const listener = (_event: unknown, events: AgentEvent[]) => cb(events)

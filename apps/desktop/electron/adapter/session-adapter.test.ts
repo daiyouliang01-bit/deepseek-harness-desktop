@@ -100,6 +100,36 @@ describe('SessionAdapter (mock wire)', () => {
     adapter.unarchive('s1')
     expect(store.isArchived('s1')).toBe(false)
   })
+
+  it('respondApproval and respondQuestion echo rpcId with the official payloads', async () => {
+    const responses: unknown[] = []
+    const client = {
+      unary: async () => {
+        throw new Error('not used')
+      },
+      respond: async (message: unknown) => {
+        responses.push(message)
+        return { accepted: true }
+      }
+    } as unknown as RpcClient
+    const a = new SessionAdapter({ client, store })
+
+    await a.respondApproval('rpc-a', 's1', 'a1', 'allowed-once')
+    await a.respondQuestion('rpc-q', 's1', { answers: [{ id: 'q1', selected: ['A'] }] })
+
+    expect(responses).toEqual([
+      {
+        type: 'client-response',
+        rpcId: 'rpc-a',
+        result: { ok: true, value: { sessionId: 's1', approvalId: 'a1', outcome: 'allowed-once' } }
+      },
+      {
+        type: 'client-response',
+        rpcId: 'rpc-q',
+        result: { ok: true, value: { sessionId: 's1', answer: { answers: [{ id: 'q1', selected: ['A'] }] } } }
+      }
+    ])
+  })
 })
 
 describe('session-store schema v2', () => {

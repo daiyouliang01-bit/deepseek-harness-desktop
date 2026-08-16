@@ -72,4 +72,46 @@ describe('StreamBridge', () => {
     await bridge.start()
     expect(onClose).toHaveBeenCalled()
   })
+
+  it('maps resolved frames to resolved events and clears the ledger', async () => {
+    const onEvents = vi.fn()
+    const frames = [
+      frame({ type: 'approval/requested', sessionId: 's1', approvalId: 'a1', toolName: 'bash' }, 'rpc-a'),
+      frame({ type: 'approval/resolved', sessionId: 's1', approvalId: 'a1', outcome: 'rejected' }, 'rpc-a2'),
+      frame({ type: 'question/requested', sessionId: 's1', questions: [{ rpcId: 'q1', question: 'Pick?' }] }, 'rpc-q'),
+      frame({ type: 'question/resolved', sessionId: 's1', questionRpcId: 'q1', outcome: 'cancelled' }, 'rpc-q2')
+    ]
+    const bridge = new StreamBridge({ client: fakeClient(frames), onEvents, batchMs: 1 })
+    bridge.setActiveSession('s1')
+    await bridge.start()
+
+    const all = onEvents.mock.calls.flat(2) as AgentEvent[]
+    expect(all.map((e) => e.type)).toEqual([
+      'approval-request',
+      'approval-resolved',
+      'question',
+      'question-resolved'
+    ])
+    expect(bridge.pending.size).toBe(0)
+    expect(bridge.rpcIdFor('a1')).toBeUndefined()
+    expect(bridge.rpcIdFor('q1')).toBeUndefined()
+  })
+
+  it('rpcIdFor resolves pending approvals and questions; dropPending removes them', async () => {
+    const onEvents = vi.fn()
+    const frames = [
+      frame({ type: 'approval/requested', sessionId: 's1', approvalId: 'a1', toolName: 'bash' }, 'rpc-a'),
+      frame({ type: 'question/requested', sessionId: 's1', questions: [{ rpcId: 'q1', question: 'Pick?' }] }, 'rpc-q')
+    ]
+    const bridge = new StreamBridge({ client: fakeClient(frames), onEvents, batchMs: 1 })
+    bridge.setActiveSession('s1')
+    await bridge.start()
+
+    expect(bridge.rpcIdFor('a1')).toBe('rpc-a')
+    expect(bridge.rpcIdFor('q1')).toBe('rpc-q')
+    bridge.dropPending('a1')
+    expect(bridge.rpcIdFor('a1')).toBeUndefined()
+    expect(bridge.pending.has('rpc-a')).toBe(false)
+    expect(bridge.rpcIdFor('q1')).toBe('rpc-q') // untouched
+  })
 })
