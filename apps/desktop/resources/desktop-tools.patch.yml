@@ -21,3 +21,29 @@
   name: '@deepseek-ai/dsh-agent-instructions'
 - id: tool-todo
   name: '@deepseek-ai/dsh-tool-todo'
+
+# ── auto-execute tools: approval never, filesystem stays workspace-scoped ──
+# The web surface defaults to DSH_PERMISSION_MODE=workspace-write → tool
+# execution requires approval. The desktop shell auto-executes tools (no
+# approval interruption) while keeping the sandbox workspace-scoped.
+# The composed knobs must match a named preset, so define a desktop one and
+# make it the default for new sessions.
+- id: permission
+  name: '@deepseek-ai/dsh-permission-presets'
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+      desktop-auto:
+        sandbox: workspace-write
+        approval: never
+        name: Desktop auto-execute
+        description: Tools run automatically; file changes stay in the workspace
+    defaultPreset: desktop-auto
