@@ -1,6 +1,8 @@
 import type { Tokens } from '@dshd/ui'
 import { useCallback, useRef, useState } from 'react'
 
+export type PendingImageStatus = 'queued' | 'sending' | 'failed'
+
 export interface PendingImage {
   id: string
   name: string
@@ -8,6 +10,8 @@ export interface PendingImage {
   /** object URL for preview */
   url: string
   size: number
+  status: PendingImageStatus
+  error?: string
 }
 
 interface ImageAttachmentsProps {
@@ -15,16 +19,17 @@ interface ImageAttachmentsProps {
   images: PendingImage[]
   onAdd: (images: PendingImage[]) => void
   onRemove: (id: string) => void
+  onRetry: (id: string) => void
   onClear: () => void
   disabled?: boolean
 }
 
 /**
- * M2 — drag/drop + paste image intake row.
- * Renders pending-image thumbnails with remove, and a drag overlay that
- * highlights the input area (ChatGPT-style) while files hover over it.
+ * M2/M4 — drag/drop + paste image intake row with four-state thumbnails:
+ * queued (yellow) → sending (blue spinner) → failed (gray + retry/remove).
+ * Successful images leave the pending row (they live in the message bubble).
  */
-export function ImageAttachments({ tokens, images, onAdd, onRemove, onClear, disabled }: ImageAttachmentsProps): React.JSX.Element {
+export function ImageAttachments({ tokens, images, onAdd, onRemove, onRetry, onClear, disabled }: ImageAttachmentsProps): React.JSX.Element {
   const { colors, space, radius, font } = tokens
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
@@ -38,7 +43,8 @@ export function ImageAttachments({ tokens, images, onAdd, onRemove, onClear, dis
         name: f.name || 'paste.png',
         path: (f as File & { path?: string }).path ?? '',
         url: URL.createObjectURL(f),
-        size: f.size
+        size: f.size,
+        status: 'queued'
       }))
       onAdd(pending)
     },
@@ -80,6 +86,8 @@ export function ImageAttachments({ tokens, images, onAdd, onRemove, onClear, dis
     input.click()
   }, [collectFiles])
 
+  const queuedCount = images.filter((im) => im.status === 'queued').length
+
   return (
     <div
       onDragEnter={(e) => {
@@ -100,47 +108,109 @@ export function ImageAttachments({ tokens, images, onAdd, onRemove, onClear, dis
     >
       {images.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: space.sm, marginBottom: space.sm }}>
-          {images.map((img) => (
-            <div
-              key={img.id}
-              style={{
-                position: 'relative',
-                width: 64,
-                height: 64,
-                borderRadius: radius.sm,
-                overflow: 'hidden',
-                border: `1px solid ${colors.border}`
-              }}
-            >
-              <img src={img.url} alt={img.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              <button
-                aria-label={`Remove ${img.name}`}
-                onClick={() => {
-                  URL.revokeObjectURL(img.url)
-                  onRemove(img.id)
-                }}
+          {images.map((img) => {
+            const borderColor =
+              img.status === 'failed' ? colors.danger : img.status === 'sending' ? colors.accent : colors.warn
+            return (
+              <div
+                key={img.id}
                 style={{
-                  position: 'absolute',
-                  top: 2,
-                  right: 2,
-                  width: 18,
-                  height: 18,
-                  padding: 0,
-                  lineHeight: '16px',
-                  fontSize: 12,
-                  borderRadius: 9,
-                  background: 'rgba(0,0,0,0.6)',
-                  color: '#fff',
-                  border: 0,
-                  cursor: 'pointer'
+                  position: 'relative',
+                  width: 64,
+                  height: 64,
+                  borderRadius: radius.sm,
+                  overflow: 'hidden',
+                  border: `2px solid ${borderColor}`,
+                  opacity: img.status === 'failed' ? 0.6 : 1
                 }}
               >
-                ✕
-              </button>
-            </div>
-          ))}
-          <button onClick={onPick} style={{ width: 64, height: 64, border: `1px dashed ${colors.border}`, background: 'transparent', color: colors.textMuted, borderRadius: radius.sm, cursor: 'pointer' }}>
-            ＋
+                <img src={img.url} alt={img.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                {img.status === 'sending' && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: 'rgba(0,0,0,0.5)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 18,
+                        height: 18,
+                        border: '2px solid rgba(255,255,255,0.4)',
+                        borderTopColor: '#fff',
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite'
+                      }}
+                    />
+                  </div>
+                )}
+                {img.status === 'failed' && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: 'rgba(0,0,0,0.55)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 20
+                    }}
+                    title={img.error ?? '发送失败'}
+                  >
+                    ⚠
+                  </div>
+                )}
+                {img.status !== 'sending' && (
+                  <button
+                    aria-label={`Remove ${img.name}`}
+                    onClick={() => {
+                      URL.revokeObjectURL(img.url)
+                      onRemove(img.id)
+                    }}
+                    style={{
+                      position: 'absolute',
+                      top: 2,
+                      right: 2,
+                      width: 18,
+                      height: 18,
+                      padding: 0,
+                      lineHeight: '16px',
+                      fontSize: 12,
+                      borderRadius: 9,
+                      background: 'rgba(0,0,0,0.6)',
+                      color: '#fff',
+                      border: 0,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            )
+          })}
+          {queuedCount > 0 && !disabled && (
+            <button onClick={onPick} style={{ width: 64, height: 64, border: `1px dashed ${colors.border}`, background: 'transparent', color: colors.textMuted, borderRadius: radius.sm, cursor: 'pointer' }}>
+              ＋
+            </button>
+          )}
+        </div>
+      )}
+
+      {images.some((im) => im.status === 'failed') && (
+        <div style={{ marginBottom: space.sm, display: 'flex', gap: space.sm, alignItems: 'center' }}>
+          <span style={{ color: colors.danger, fontSize: font.sizeSm }}>
+            {images.filter((im) => im.status === 'failed').length} 张图片发送失败
+          </span>
+          <button className="mini" onClick={() => images.filter((im) => im.status === 'failed').forEach((im) => onRetry(im.id))}>
+            重试失败
+          </button>
+          <button className="mini" onClick={() => images.filter((im) => im.status === 'failed').forEach((im) => onRemove(im.id))}>
+            移除失败
           </button>
         </div>
       )}
@@ -164,7 +234,7 @@ export function ImageAttachments({ tokens, images, onAdd, onRemove, onClear, dis
         </div>
       )}
 
-      {images.length > 1 && (
+      {images.length > 1 && queuedCount > 0 && (
         <button className="mini" onClick={onClear} style={{ marginBottom: space.sm }}>
           清除全部 ({images.length})
         </button>

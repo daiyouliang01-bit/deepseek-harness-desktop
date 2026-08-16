@@ -4,6 +4,8 @@ import type { AgentEvent } from '@dshd/protocol'
 import { messageStore } from './message-store'
 import type { ChatMessage, ChatState, ToolCallState } from './event-reducer'
 import { ImageAttachments, type PendingImage } from './ImageAttachments'
+import { MarkdownContent } from './MarkdownContent'
+import type { SessionOpResult } from '@electron/preload'
 
 interface ChatViewProps {
   tokens: Tokens
@@ -48,8 +50,14 @@ function MessageRow({ msg, tokens, sessionId }: { msg: ChatMessage; tokens: Toke
           wordBreak: 'break-word'
         }}
       >
-        {msg.content}
-        {msg.streaming && <span style={{ color: colors.textMuted }}>▋</span>}
+        {msg.streaming ? (
+          <>
+            <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+            <span style={{ color: colors.textMuted }}>▋</span>
+          </>
+        ) : (
+          <MarkdownContent content={msg.content} tokens={tokens} />
+        )}
         {msg.images && msg.images.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: space.sm, marginTop: space.sm }}>
             {msg.images.map((img) => (
@@ -254,7 +262,6 @@ function QuestionCard({
 export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.Element {
   const [state, setState] = useState<ChatState>(messageStore.getState())
   const [input, setInput] = useState('')
-  const [sending, setSending] = useState(false)
   const [streamRunning, setStreamRunning] = useState(false)
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
 
@@ -276,57 +283,73 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
     void window.desktop.agentSetActiveSession(activeSessionId)
   }, [activeSessionId])
 
+  const sendImages = useCallback(
+    async (targets: PendingImage[], text: string) => {
+      // mark targets sending
+      setPendingImages((prev) => prev.map((im) => (targets.some((t) => t.id === im.id) ? { ...im, status: 'sending', error: undefined } : im)))
+      try {
+        const res = await window.desktop.agentSend(
+          activeSessionId!,
+          text,
+          targets.map((im) => ({ name: im.name, path: im.path }))
+        )
+        if (res.ok && res.value && res.value.images !== undefined && res.value.images > 0) {
+          // success → drop from the pending row (they live in the message bubble)
+          setPendingImages((prev) => prev.filter((im) => !targets.some((t) => t.id === im.id)))
+        } else {
+          // failure (whole batch or partial) → mark failed with reason
+          const reason = !res.ok ? (res.error ?? '发送失败') : res.value?.rejected?.map((r) => r.reason).join('; ') ?? '发送失败'
+          setPendingImages((prev) => prev.map((im) => (targets.some((t) => t.id === im.id) ? { ...im, status: 'failed', error: reason } : im)))
+        }
+        return res
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err)
+        setPendingImages((prev) => prev.map((im) => (targets.some((t) => t.id === im.id) ? { ...im, status: 'failed', error: reason } : im)))
+        return { ok: false, error: reason } as SessionOpResult<{ accepted: boolean }>
+      }
+    },
+    [activeSessionId]
+  )
+
   const onSend = useCallback(async () => {
     const text = input.trim()
-    const hasImages = pendingImages.length > 0
+    const queued = pendingImages.filter((im) => im.status === 'queued')
+    const hasImages = queued.length > 0
     if ((!text && !hasImages) || !activeSessionId) return
     setInput('')
-    setSending(true)
-    const images = pendingImages
-    setPendingImages([])
-    // optimistic user message (text + image count), then real events stream in
+    // optimistic user message, then real events stream in
     messageStore.dispatch({
       type: 'message',
       id: `local:${Date.now()}`,
       role: 'user',
-      content: text + (images.length > 0 ? `\n\n[📷 ${images.length} 张图片]` : ''),
+      content: text + (hasImages ? `\n\n[📷 ${queued.length} 张图片]` : ''),
       ts: Date.now()
     })
-    try {
-      const res = await window.desktop.agentSend(
-        activeSessionId,
-        text,
-        images.map((im) => ({ name: im.name, path: im.path }))
-      )
-      if (!res.ok) {
+    if (hasImages) {
+      await sendImages(queued, text)
+    } else {
+      try {
+        const res = await window.desktop.agentSend(activeSessionId, text)
+        if (!res.ok) {
+          messageStore.dispatch({
+            type: 'error',
+            id: `local-err:${Date.now()}`,
+            code: 'unknown',
+            message: res.error ?? 'send failed',
+            retryable: false
+          })
+        }
+      } catch (err) {
         messageStore.dispatch({
           type: 'error',
           id: `local-err:${Date.now()}`,
           code: 'unknown',
-          message: res.error ?? 'send failed',
-          retryable: false
-        })
-      } else if (res.value?.rejected?.length) {
-        messageStore.dispatch({
-          type: 'error',
-          id: `local-err:${Date.now()}`,
-          code: 'unknown',
-          message: `部分图片被拒绝: ${res.value.rejected.map((r) => r.reason).join('; ')}`,
+          message: err instanceof Error ? err.message : String(err),
           retryable: false
         })
       }
-    } catch (err) {
-      messageStore.dispatch({
-        type: 'error',
-        id: `local-err:${Date.now()}`,
-        code: 'unknown',
-        message: err instanceof Error ? err.message : String(err),
-        retryable: false
-      })
-    } finally {
-      setSending(false)
     }
-  }, [input, activeSessionId, pendingImages])
+  }, [input, activeSessionId, pendingImages, sendImages])
 
   const onCancel = useCallback(async () => {
     if (!activeSessionId) return
@@ -334,7 +357,8 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
   }, [activeSessionId])
 
   const { colors, space, radius, font } = tokens
-  const canSend = (input.trim().length > 0 || pendingImages.length > 0) && activeSessionId !== null && !sending
+  const canSend = (input.trim().length > 0 || pendingImages.some((im) => im.status === 'queued')) && activeSessionId !== null
+  const queuedCount = pendingImages.filter((im) => im.status === 'queued').length
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -373,8 +397,12 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
           images={pendingImages}
           onAdd={(imgs) => setPendingImages((prev) => [...prev, ...imgs])}
           onRemove={(id) => setPendingImages((prev) => prev.filter((im) => im.id !== id))}
+          onRetry={(id) => {
+            const target = pendingImages.find((im) => im.id === id)
+            if (target) void sendImages([target], input)
+          }}
           onClear={() => setPendingImages([])}
-          disabled={activeSessionId === null || sending}
+          disabled={activeSessionId === null}
         />
         <textarea
           value={input}
@@ -403,7 +431,7 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
         />
         <div style={{ display: 'flex', gap: space.sm, marginTop: space.sm }}>
           <button onClick={() => void onSend()} disabled={!canSend}>
-            {sending ? 'Sending…' : pendingImages.length > 0 ? `Send (文 + ${pendingImages.length} 图)` : 'Send'}
+            {pendingImages.some((im) => im.status === 'sending') ? 'Sending…' : queuedCount > 0 ? `Send (文 + ${queuedCount} 图)` : 'Send'}
           </button>
           {streamRunning && (
             <button className="ghost" onClick={() => void onCancel()}>
