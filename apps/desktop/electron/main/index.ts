@@ -5,6 +5,8 @@ import { homedir } from 'node:os'
 import { randomBytes } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { isAllowedNavigation } from '../navigation-guard'
+import { CrashEvidence } from '../crash-evidence'
+import { UpdateRollback } from '../updater/update-rollback'
 import { autolaunchEnabled, HIDDEN_LAUNCH_ARG, setAutolaunch, shouldStartHidden, type LoginWindowController } from '../autolaunch'
 import { KeyVault } from '../keys/vault'
 import { intakeImages } from '../attachments/image-intake'
@@ -62,6 +64,15 @@ const keyVault = new KeyVault(createVaultStore())
 
 // --- auto-update (Task 5.3) ---
 const updater = new UpdateManager(createElectronUpdaterProvider())
+
+// --- crash evidence + update rollback (crash-evidence.ts / update-rollback.ts) ---
+const evidenceDir = join(app.getPath('userData'), 'crash-evidence')
+const crashEvidence = new CrashEvidence({
+  dir: evidenceDir,
+  appVersion: app.getVersion(),
+  dshVersion: () => runtime.getStatus().ready?.url !== undefined ? 'runtime-ready' : undefined
+})
+const rollback = new UpdateRollback({ dir: join(app.getPath('userData'), 'updates') })
 
 // --- desktop presence (Task 1.5): tray / shortcut / notifications ---
 let tray: Tray | null = null
@@ -812,10 +823,35 @@ ipcMain.handle('update:install', () => {
   return { ok: true }
 })
 updater.subscribe(() => {
-  mainWindow?.webContents.send('update:state', updater.getState())
+  const st = updater.getState()
+  // Pending-install marker for cross-restart rollback: written when the
+  // update is downloaded and awaiting the restart-to-install.
+  if (st.status === 'downloaded' && st.version) {
+    rollback.markPendingInstall(st.version)
+  }
+  mainWindow?.webContents.send('update:state', st)
+})
+
+// Crash-evidence / rollback query for the renderer (recovery banner).
+ipcMain.handle('crash-evidence:get', () => {
+  const prev = crashEvidence.readPrevious()
+  const pending = rollback.readPending()
+  const suggested = prev !== null && pending !== null
+  return {
+    previousCrashed: prev !== null,
+    rollbackSuggested: suggested,
+    previousVersion: pending?.version ?? null,
+    evidence: prev
+      ? { startedAt: prev.startedAt, appVersion: prev.appVersion }
+      : null
+  }
 })
 
 app.whenReady().then(() => {
+  // Crash evidence: did the previous run die with a pending update?
+  const prevCrashed = crashEvidence.previousRunCrashed()
+  const rollbackState = rollback.evaluate(prevCrashed)
+  crashEvidence.beginRun()
   createWindow()
   createTray()
   installAppMenu()
@@ -851,6 +887,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   isQuitting = true
   shortcutManager.dispose()
+  crashEvidence.markCleanExit()
   void runtime.stop()
 })
 

@@ -14,7 +14,9 @@
     "test:e2e": "electron-vite build && playwright test",
     "icons": "node ../../scripts/generate-icon.mjs",
     "package": "node scripts/prepare-runtime.mjs --release && electron-vite build && electron-builder",
-    "verify:runtime": "node scripts/verify-packaged-runtime.mjs"
+    "verify:runtime": "node scripts/verify-packaged-runtime.mjs",
+    "verify:licenses": "node ../../scripts/verify-licenses.mjs",
+    "verify:mac": "node scripts/verify-packaged-runtime.mjs && node ../../scripts/verify-licenses.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

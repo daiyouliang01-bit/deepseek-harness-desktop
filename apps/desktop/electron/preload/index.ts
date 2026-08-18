@@ -58,6 +58,12 @@ const api = {
   updateCheck: (): Promise<UpdateState> => ipcRenderer.invoke('update:check'),
   updateDownload: (): Promise<UpdateState> => ipcRenderer.invoke('update:download'),
   updateInstall: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('update:install'),
+  crashEvidenceGet: (): Promise<{
+    previousCrashed: boolean
+    rollbackSuggested: boolean
+    previousVersion: string | null
+    evidence: { startedAt: number; appVersion: string } | null
+  }> => ipcRenderer.invoke('crash-evidence:get'),
   onUpdateState: (cb: (state: UpdateState) => void): (() => void) => {
     const listener = (_event: unknown, state: UpdateState) => cb(state)
     ipcRenderer.on('update:state', listener)

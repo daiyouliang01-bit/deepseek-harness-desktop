@@ -33,12 +33,20 @@ export function AppShell({
   const [keyConfigured, setKeyConfigured] = useState<boolean | null>(null)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [updateBadge, setUpdateBadge] = useState(false)
+  const [rollbackSuggested, setRollbackSuggested] = useState<{ version: string | null } | null>(null)
   const { colors } = tokens
 
   // P1: update badge — an update is downloaded and awaits restart.
   useEffect(() => {
     void window.desktop.updateGetState().then((s) => setUpdateBadge(s?.status === 'downloaded'))
     return window.desktop.onUpdateState((s) => setUpdateBadge(s.status === 'downloaded'))
+  }, [])
+
+  // Crash-evidence: previous run crashed while an update was pending → offer rollback.
+  useEffect(() => {
+    void window.desktop.crashEvidenceGet().then((r) => {
+      if (r.rollbackSuggested) setRollbackSuggested({ version: r.previousVersion })
+    })
   }, [])
 
   // First-run gate (Task 3.5): show onboarding until a key is configured.
@@ -82,6 +90,22 @@ export function AppShell({
     <div style={{ display: 'flex', height: '100vh', background: colors.bg, color: colors.text }}>
       <Sidebar tokens={tokens} view={view} onNavigate={setView} runtimeState={status?.state ?? 'idle'} updateBadge={updateBadge} />
       <main style={{ flex: 1, overflow: 'auto', padding: tokens.space.lg }}>
+        {rollbackSuggested && (
+          <div
+            style={{
+              background: colors.surface,
+              border: `1px solid ${colors.warn}`,
+              borderRadius: 8,
+              padding: `${tokens.space.sm}px ${tokens.space.md}px`,
+              marginBottom: tokens.space.md,
+              color: colors.text
+            }}
+          >
+            ⚠ 上次启动在更新后异常退出。新版本可能未正确安装
+            {rollbackSuggested.version ? `（pending ${rollbackSuggested.version}）` : ''}。
+            如反复如此，请从设置中检查版本，或回退到上一版本。
+          </div>
+        )}
         {view === 'conversations' && (
           <div style={{ display: 'flex', gap: tokens.space.lg }}>
             <div style={{ flex: 1, minWidth: 260 }}>
