@@ -11,3 +11,4 @@ release/
 coverage/
 playwright-report/
 test-results/
+apps/desktop/build/runtime/
