@@ -13,10 +13,10 @@ function fakeProvider(overrides: Partial<UpdateProvider> = {}): UpdateProvider {
 }
 
 describe('UpdateManager', () => {
-  it('reports up-to-date when disabled', async () => {
+  it('reports unsupported when updates are disabled (dev build)', async () => {
     const m = new UpdateManager(fakeProvider({ isEnabled: () => false }))
     const state = await m.check()
-    expect(state.status).toBe('up-to-date')
+    expect(state.status).toBe('unsupported')
     expect(state.error).toMatch(/disabled/)
   })
 

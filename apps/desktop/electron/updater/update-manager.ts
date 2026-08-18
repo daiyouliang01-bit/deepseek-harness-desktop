@@ -13,7 +13,7 @@ export interface UpdateProvider {
 }
 
 export interface UpdateState {
-  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
+  status: 'unsupported' | 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
   version?: string
   percent?: number
   error?: string
@@ -37,7 +37,7 @@ export class UpdateManager {
   /** Check for updates (no-op when disabled, e.g. dev builds). */
   async check(): Promise<UpdateState> {
     if (!this.provider.isEnabled()) {
-      this.setState({ status: 'up-to-date', version: undefined, error: 'updates disabled in this build' })
+      this.setState({ status: 'unsupported', version: undefined, error: 'updates disabled in this build' })
       return this.state
     }
     this.setState({ status: 'checking' })

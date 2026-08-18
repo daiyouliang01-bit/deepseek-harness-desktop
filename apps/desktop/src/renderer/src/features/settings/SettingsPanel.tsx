@@ -29,6 +29,7 @@ function UpdateSection({ tokens }: { tokens: Tokens }): React.JSX.Element {
         {state?.status === 'downloading' && `Downloading… ${Math.round(state.percent ?? 0)}%`}
         {state?.status === 'downloaded' && 'Downloaded — restart to install'}
         {state?.status === 'up-to-date' && 'Up to date'}
+        {state?.status === 'unsupported' && 'Updates unavailable (development build)'}
         {state?.status === 'error' && `Update error: ${state.error}`}
         {!state && '…'}
       </div>
