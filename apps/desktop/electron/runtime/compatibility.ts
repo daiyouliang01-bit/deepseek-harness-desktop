@@ -3,6 +3,7 @@
 import { execFile } from 'node:child_process'
 import { access, constants } from 'node:fs/promises'
 import { promisify } from 'node:util'
+import { findDsh } from './dsh-bin'
 
 const execFileAsync = promisify(execFile)
 
@@ -41,7 +42,9 @@ export async function runCompatibilityChecks(options: CompatibilityOptions = {})
   const checks: CompatibilityCheck[] = []
 
   // 1. dsh executable presence
-  const bin = options.dshBin ?? 'dsh'
+  // Default to the resolved runtime (findDsh falls back to global npm bins),
+  // not just bare 'dsh' on PATH — some shells lack the global bin dir.
+  const bin = options.dshBin ?? findDsh() ?? 'dsh'
   try {
     await execFileAsync(bin, ['--version'], { timeout: 10_000 })
     checks.push({ name: 'dsh executable', passed: true, detail: bin })
