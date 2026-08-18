@@ -75,6 +75,9 @@ jobs:
       - name: Package (macOS dmg + zip)
         run: pnpm --filter @dshd/desktop exec electron-builder --mac --config apps/desktop/electron-builder.yml
 
+      - name: Verify packaged runtime (bundled node/dsh/patch/icon)
+        run: node apps/desktop/scripts/verify-packaged-runtime.mjs
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

@@ -77,6 +77,12 @@ function dshVersion(bin) {
   return execFileSync(bin, ['--version'], { encoding: 'utf8', timeout: 10_000 }).trim()
 }
 
+/** major.minor of a dsh version string (0.1.0-rc.7 → 0.1). */
+function majorMinor(v) {
+  const m = /^(\d+)\.(\d+)/.exec(v)
+  return m ? `${m[1]}.${m[2]}` : null
+}
+
 // ----- release: download Node -----
 
 /**
@@ -283,6 +289,20 @@ try {
       process.exit(1)
     }
     const version = dshVersion(bin)
+    // Pinning check: warn when the dev dsh drifts from the packaged runtime's
+    // pinned version — dev and release then behave differently.
+    const manifest = readManifest()
+    const installed = majorMinor(version)
+    const pinned = majorMinor(manifest.dsh.version)
+    if (installed !== pinned) {
+      console.warn(
+        `[prepare-runtime] ⚠ dev dsh ${version} != pinned ${manifest.dsh.version} ` +
+          `(runtime-manifest.json). Dev runs ${installed}, the packaged app runs ${pinned}. ` +
+          'Update runtime-manifest.json to match, or accept the difference.'
+      )
+    } else {
+      console.log(`[prepare-runtime] dev dsh ${version} matches pinned ${manifest.dsh.version}`)
+    }
     console.log(`[prepare-runtime] dev build OK — dsh available (${bin}): ${version}`)
   }
 } catch (err) {
