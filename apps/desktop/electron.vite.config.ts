@@ -9,6 +9,10 @@ const permissionsAlias = resolve(__dirname, '../../packages/permissions/src/inde
 export default defineConfig({
   main: {
     build: {
+      // @dshd/* 是 workspace 源码包(exports 指向 .ts),必须由 alias 内联打包,
+      // 不能被 electron-vite 默认的 externalizeDeps 当成外部依赖留下 require()。
+      // 否则运行时 Node 直接加载 .ts 源会 ERR_MODULE_NOT_FOUND。
+      externalizeDeps: { exclude: ['@dshd/protocol', '@dshd/session-store', '@dshd/permissions'] },
       lib: {
         // electron-vite derives the entry name from the file name; the
         // electron-vite convention layout (electron/main/index.ts) yields

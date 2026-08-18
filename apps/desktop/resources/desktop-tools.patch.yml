@@ -47,3 +47,9 @@
         name: Desktop auto-execute
         description: Tools run automatically; file changes stay in the workspace
     defaultPreset: desktop-auto
+
+# ── phone access (Task 7.2): Cloudflare quick tunnel + mobile view ──
+# @dshd/phone-sync must be linked into the web profile's node_modules
+# (the app does this automatically at startup via phone-sync-installer.ts).
+- id: phone-sync
+  name: '@dshd/phone-sync'

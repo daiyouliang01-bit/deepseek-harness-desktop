@@ -1,5 +1,7 @@
 /** Task 3.3 — session store repository (CRUD, search, migration, import/export). */
 
+import { mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { DDL, SCHEMA_VERSION, SEED_META } from './schema'
 import type { ConversationRow, MessageRow, ProjectRow, ToolCallRow } from './schema'
@@ -16,6 +18,12 @@ export class SessionStore {
   private readonly runtimeVersion?: string
 
   constructor(options: SessionStoreOptions) {
+    // SQLite cannot create missing parent directories — ensure they exist
+    // (e.g. userData/db on first run) or opening throws and the session list
+    // silently fails.
+    if (options.path !== ':memory:') {
+      mkdirSync(dirname(options.path), { recursive: true })
+    }
     this.db = new DatabaseSync(options.path)
     this.runtimeVersion = options.runtimeVersion
     this.migrate()

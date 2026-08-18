@@ -4,6 +4,30 @@ import { AppShell } from './features/layout/AppShell'
 
 type Screen = 'loading' | 'recovery' | 'shell'
 
+/** P0-3: after connecting timeout, reveal an "Open log" diagnostic button. */
+function ConnectingDiagnostics(): React.JSX.Element {
+  const [stuck, setStuck] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    const t0 = Date.now()
+    const timer = setInterval(() => {
+      const s = Math.floor((Date.now() - t0) / 1000)
+      setElapsed(s)
+      if (s >= 30) setStuck(true)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+  if (!stuck) return <p className="muted small">{elapsed > 0 ? `已等待 ${elapsed}s…` : ''}</p>
+  return (
+    <div className="connecting-stuck">
+      <p className="muted small">启动超过 30s，可能卡住了。</p>
+      <button className="ghost" onClick={() => void window.desktop.openLogs()}>
+        Open log（查看 harness.log）
+      </button>
+    </div>
+  )
+}
+
 /**
  * Task 1.3 + 3.1 shell screen.
  * - loading: shown while the Harness runtime boots
@@ -80,6 +104,7 @@ export default function App(): React.JSX.Element {
           <h1>DeepSeek Harness Desktop</h1>
           <p className="muted">Starting local Harness runtime…</p>
           <div className="spinner" aria-label="loading" />
+          <ConnectingDiagnostics />
           <p className="muted small">{version && `v${version}`}</p>
           <button className="ghost" onClick={onOpenShell}>
             Open custom shell (preview)

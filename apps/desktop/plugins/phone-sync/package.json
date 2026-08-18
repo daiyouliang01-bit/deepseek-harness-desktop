@@ -1,0 +1,20 @@
+{
+  "name": "@dshd/phone-sync",
+  "description": "Phone sync for DeepSeek Harness Desktop: Cloudflare quick tunnel to the local dsh web UI + self-contained mobile view (session list / detail / send / SSE live). Persisted from the dynamic phn + phv-3 plugins (2026-08-16 session).",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "assets/"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

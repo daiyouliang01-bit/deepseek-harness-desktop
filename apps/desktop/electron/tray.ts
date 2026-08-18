@@ -6,27 +6,37 @@ export interface TrayActions {
   toggleWindow: () => void
   startRuntime: () => void
   stopRuntime: () => void
+  openPhonePanel: () => void
   openLogs: () => void
+  toggleAutolaunch: () => void
   quit: () => void
 }
 
 export interface TrayMenuItem {
   label?: string
   enabled?: boolean
+  checked?: boolean
   type?: 'normal' | 'separator'
   click?: () => void
 }
 
 /** Pure: build the tray menu template from the current runtime state. */
-export function buildTrayMenuTemplate(state: RuntimeState | 'unknown', actions: TrayActions): TrayMenuItem[] {
+export function buildTrayMenuTemplate(
+  state: RuntimeState | 'unknown',
+  actions: TrayActions,
+  autolaunchOn = false
+): TrayMenuItem[] {
   const running = state === 'ready' || state === 'starting'
   return [
     { label: 'Show / Hide Window', click: actions.toggleWindow },
+    { type: 'separator' },
+    { label: '📱 手机访问 / PIN 设置', click: actions.openPhonePanel },
     { type: 'separator' },
     { label: `Runtime: ${state}`, enabled: false },
     { label: running ? 'Stop Runtime' : 'Start Runtime', click: running ? actions.stopRuntime : actions.startRuntime },
     { type: 'separator' },
     { label: 'Open Logs', click: actions.openLogs },
+    { label: autolaunchOn ? '✓ 开机自启' : '开机自启', checked: autolaunchOn, click: actions.toggleAutolaunch },
     { type: 'separator' },
     { label: 'Quit DeepSeek Harness Desktop', click: actions.quit }
   ]

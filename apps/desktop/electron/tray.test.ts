@@ -9,7 +9,9 @@ describe('tray menu template', () => {
     toggleWindow: vi.fn(),
     startRuntime: vi.fn(),
     stopRuntime: vi.fn(),
+    openPhonePanel: vi.fn(),
     openLogs: vi.fn(),
+    toggleAutolaunch: vi.fn(),
     quit: vi.fn()
   }
 
@@ -33,9 +35,11 @@ describe('tray menu template', () => {
   it('wires toggle/logs/quit', () => {
     const tpl = buildTrayMenuTemplate('idle', actions)
     tpl.find((i) => i.label === 'Show / Hide Window')?.click?.()
+    tpl.find((i) => i.label === '📱 手机访问 / PIN 设置')?.click?.()
     tpl.find((i) => i.label === 'Open Logs')?.click?.()
     tpl.find((i) => i.label === 'Quit DeepSeek Harness Desktop')?.click?.()
     expect(actions.toggleWindow).toHaveBeenCalled()
+    expect(actions.openPhonePanel).toHaveBeenCalled()
     expect(actions.openLogs).toHaveBeenCalled()
     expect(actions.quit).toHaveBeenCalled()
   })
@@ -140,5 +144,18 @@ describe('app menu template', () => {
     official?.click?.()
     expect(actions.openCustomShell).toHaveBeenCalled()
     expect(actions.openOfficialUI).toHaveBeenCalled()
+  })
+
+  it('keeps the Edit menu with clipboard roles so Cmd+C/V/X/A keep working', () => {
+    // On macOS these keyboard shortcuts are owned by the Edit menu's roles.
+    // Replacing the default menu (Menu.setApplicationMenu) without them kills
+    // copy/paste/cut/select-all in the app (regression: paste broken).
+    const tpl = buildAppMenuTemplate(actions)
+    const edit = tpl.find((m) => m.label === 'Edit')
+    expect(edit).toBeTruthy()
+    const roles = edit?.submenu?.map((i) => i.role).filter(Boolean)
+    for (const role of ['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll']) {
+      expect(roles).toContain(role)
+    }
   })
 })

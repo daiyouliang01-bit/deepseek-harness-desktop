@@ -4,6 +4,7 @@ import type { RuntimeStatus } from '@electron/runtime/runtime-types'
 import { ChatView } from '../chat/ChatView'
 import { ConversationsPanel } from '../conversations/ConversationsPanel'
 import { Onboarding } from '../onboarding/Onboarding'
+import { PhonePanel } from '../phone/PhonePanel'
 import { ProjectsPanel } from '../projects/ProjectsPanel'
 import { SettingsPanel } from '../settings/SettingsPanel'
 import { Sidebar, type ShellView } from '../sidebar/Sidebar'
@@ -31,14 +32,45 @@ export function AppShell({
   const [view, setView] = useState<ShellView>('conversations')
   const [keyConfigured, setKeyConfigured] = useState<boolean | null>(null)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [updateBadge, setUpdateBadge] = useState(false)
   const { colors } = tokens
 
+  // P1: update badge — an update is downloaded and awaits restart.
+  useEffect(() => {
+    void window.desktop.updateGetState().then((s) => setUpdateBadge(s?.status === 'downloaded'))
+    return window.desktop.onUpdateState((s) => setUpdateBadge(s.status === 'downloaded'))
+  }, [])
+
   // First-run gate (Task 3.5): show onboarding until a key is configured.
+  // The phone panel (PIN / tunnel) is exempt — it needs no API key.
+  const needsOnboarding = keyConfigured === false && view !== 'phone'
   useEffect(() => {
     void window.desktop.listKeys().then((keys) => setKeyConfigured(keys.some((k) => k.configured)))
   }, [])
 
-  if (keyConfigured === false) {
+  // Custom-shell navigation (tray / menu): jump to the requested view.
+  useEffect(() => {
+    return window.desktop.onOpenShell((viewArg) => {
+      if (viewArg === 'phone' || viewArg === 'settings' || viewArg === 'projects' || viewArg === 'conversations') {
+        setView(viewArg)
+      }
+    })
+  }, [])
+
+  // Phone panel is always reachable (PIN/tunnel need no API key): render it
+  // before the onboarding gate so the floating button works on first run.
+  if (view === 'phone') {
+    return (
+      <div style={{ display: 'flex', height: '100vh', background: colors.bg, color: colors.text }}>
+        <Sidebar tokens={tokens} view={view} onNavigate={setView} runtimeState={status?.state ?? 'idle'} updateBadge={updateBadge} />
+        <main style={{ flex: 1, overflow: 'auto', padding: tokens.space.lg }}>
+          <PhonePanel tokens={tokens} />
+        </main>
+      </div>
+    )
+  }
+
+  if (needsOnboarding) {
     return (
       <div style={{ height: '100vh', background: colors.bg, color: colors.text, overflow: 'auto' }}>
         <Onboarding tokens={tokens} onComplete={() => setKeyConfigured(true)} />
@@ -48,7 +80,7 @@ export function AppShell({
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: colors.bg, color: colors.text }}>
-      <Sidebar tokens={tokens} view={view} onNavigate={setView} runtimeState={status?.state ?? 'idle'} />
+      <Sidebar tokens={tokens} view={view} onNavigate={setView} runtimeState={status?.state ?? 'idle'} updateBadge={updateBadge} />
       <main style={{ flex: 1, overflow: 'auto', padding: tokens.space.lg }}>
         {view === 'conversations' && (
           <div style={{ display: 'flex', gap: tokens.space.lg }}>

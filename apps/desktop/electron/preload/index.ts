@@ -11,6 +11,14 @@ export interface SessionOpResult<T> {
   value?: T
 }
 
+export interface TunnelStatus {
+  phase: string
+  url: string | null
+  message: string | null
+  startedAt: number
+  upstream: string
+}
+
 /**
  * The only surface exposed to the renderer (see docs/ipc-contract.md).
  * Every capability is a narrow, explicitly typed IPC call.
@@ -29,8 +37,9 @@ const api = {
 
   // UI navigation (Task 3.1)
   openOfficialUI: (): Promise<{ ok: boolean; reason?: string }> => ipcRenderer.invoke('ui:open-official'),
-  onOpenShell: (callback: () => void): (() => void) => {
-    const listener = () => callback()
+  openPhonePanel: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('ui:open-phone-panel'),
+  onOpenShell: (callback: (view?: string) => void): (() => void) => {
+    const listener = (_e: unknown, view?: string) => callback(view)
     ipcRenderer.on('ui:open-shell', listener)
     return () => {
       ipcRenderer.removeListener('ui:open-shell', listener)
@@ -85,6 +94,15 @@ const api = {
   agentAttachment: (sessionId: string, attachmentId: string): Promise<SessionOpResult<{ data: string; mediaType: string; name?: string }>> =>
     ipcRenderer.invoke('agent:attachment', sessionId, attachmentId),
   agentStreamState: (): Promise<{ running: boolean }> => ipcRenderer.invoke('agent:stream-state'),
+  autolaunchGet: (): Promise<{ enabled: boolean }> => ipcRenderer.invoke('autolaunch:get'),
+  autolaunchSet: (enabled: boolean): Promise<{ ok: boolean }> => ipcRenderer.invoke('autolaunch:set', enabled),
+  onDeepLink: (cb: (url: string) => void): (() => void) => {
+    const listener = (_event: unknown, url: string) => cb(url)
+    ipcRenderer.on('deep-link', listener)
+    return () => {
+      ipcRenderer.removeListener('deep-link', listener)
+    }
+  },
   onAgentEvent: (cb: (events: AgentEvent[]) => void): (() => void) => {
     const listener = (_event: unknown, events: AgentEvent[]) => cb(events)
     ipcRenderer.on('agent:event', listener)
@@ -106,7 +124,18 @@ const api = {
     return () => {
       ipcRenderer.removeListener('runtime:status', listener)
     }
-  }
+  },
+
+  // phone access (Task 7.2) — tunnel control proxied through the main process
+  phoneStatus: (): Promise<SessionOpResult<TunnelStatus>> => ipcRenderer.invoke('phone:get-status'),
+  phoneStart: (): Promise<SessionOpResult<TunnelStatus>> => ipcRenderer.invoke('phone:start'),
+  phoneStop: (): Promise<SessionOpResult<TunnelStatus>> => ipcRenderer.invoke('phone:stop'),
+  // PIN gate (Task 7.3)
+  pinHas: (): Promise<{ ok: boolean; value?: boolean; error?: string }> => ipcRenderer.invoke('pin:has'),
+  pinSet: (pin: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('pin:set', pin),
+  pinStatus: (): Promise<{ ok: boolean; value?: { enabled: boolean; locked: boolean; lockRemainingMs: number } }> =>
+    ipcRenderer.invoke('pin:status'),
+  pinResetLock: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('pin:reset-lock')
 }
 
 contextBridge.exposeInMainWorld('desktop', api)

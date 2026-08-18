@@ -1,5 +1,7 @@
 /** Task 1.2 — runtime process types (app-level, no Harness internals). */
 
+import type { RuntimeDescriptor } from './dsh-bin'
+
 export type RuntimeState =
   | 'idle' // not started
   | 'starting' // spawn issued, waiting for ready URL
@@ -26,7 +28,12 @@ export interface RuntimeStatus {
 }
 
 export interface HarnessProcessOptions {
-  /** Path to the `dsh` executable (defaults to `dsh` on PATH). */
+  /**
+   * Resolved runtime descriptor (command + prefix args). When set, this is
+   * used verbatim to spawn dsh. Takes precedence over `dshBin`.
+   */
+  runtime?: RuntimeDescriptor
+  /** Path to the `dsh` executable (legacy; defaults to `dsh` on PATH). */
   dshBin?: string
   /** Extra args passed after `web` (e.g. `--trusted-host`). */
   extraArgs?: string[]
@@ -44,6 +51,24 @@ export interface HarnessProcessOptions {
   onOutput?: (stream: 'stdout' | 'stderr', line: string) => void
   /** Default: '--host 127.0.0.1 --port 0' (OS-assigned free port, ADR-007). */
   defaultArgs?: string[]
+  /**
+   * Preferred fixed port (Phase 2). When set, start() first checks the port
+   * is free; if it is occupied by a healthy dsh the caller is expected to
+   * reuse it (tryReuse) instead of spawning. Unset → --port 0 (OS-assigned).
+   */
+  port?: number
+  /**
+   * Auto-restart on unexpected exit (Phase 3.3, R9/R22). When true, a dsh
+   * that dies outside a clean stop is restarted with exponential backoff
+   * (1s→2s→4s… capped at 30s), giving up after `maxRestartAttempts`
+   * consecutive fast crashes (default 5). User-initiated stop() disarms it.
+   */
+  autoRestart?: boolean
+  maxRestartAttempts?: number
+  /** Process-ledger callbacks (plan v1.4 §3.1): record spawn/ready/stop. */
+  onSpawned?: (pid: number, startedAt: number) => void
+  onReady?: (info: ReadyInfo) => void
+  onStopped?: (clean: boolean) => void
 }
 
 export interface HarnessProcessEvents {

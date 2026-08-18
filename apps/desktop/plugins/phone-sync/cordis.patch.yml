@@ -1,0 +1,6 @@
+# @dshd/phone-sync — phone access for DeepSeek Harness Desktop
+# Persisted from the dynamic `phn` + `phv-3` plugins (2026-08-16).
+# Mounted by the desktop profile's cordis.patch.yml insert list.
+- insert:
+    - id: phone-sync
+      name: '@dshd/phone-sync'

@@ -7,7 +7,27 @@
  */
 
 import { readFile } from 'node:fs/promises'
-import sharp from 'sharp'
+
+/**
+ * Lazy sharp: the native module is only required when images are actually
+ * processed. Loading it at module scope makes the whole main process fail on
+ * startup when the platform binary is missing from a packaged build, which
+ * bricks the app behind an error dialog. With lazy loading the rest of the
+ * app still works and image intake degrades gracefully.
+ */
+let sharpModule: typeof import('sharp')['default'] | null | undefined
+function getSharp(): typeof import('sharp')['default'] {
+  if (sharpModule === undefined) {
+    try {
+      const mod = require('sharp') as typeof import('sharp')
+      sharpModule = (mod as { default?: typeof import('sharp')['default'] }).default ?? (mod as unknown as typeof import('sharp')['default'])
+    } catch {
+      sharpModule = null
+    }
+  }
+  if (!sharpModule) throw new Error('sharp unavailable (image intake disabled)')
+  return sharpModule
+}
 
 export type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
 
@@ -101,7 +121,7 @@ export async function intakeImages(
         rejected.push({ index: i, reason: `${name} exceeds ${Math.round(limits.maxImageBytes / 1024 / 1024)}MB` })
         continue
       }
-      let meta = await sharp(bytes, { animated: mediaType === 'image/gif' }).metadata()
+      let meta = await getSharp()(bytes, { animated: mediaType === 'image/gif' }).metadata()
       let width = meta.width ?? 0
       let height = meta.height ?? 0
       if (width * height > limits.maxImagePixels) {
@@ -119,16 +139,16 @@ export async function intakeImages(
         const scale = AUTO_RESIZE.maxLongEdge / longEdge
         const newW = Math.max(1, Math.round(width * scale))
         const newH = Math.max(1, Math.round(height * scale))
-        outBuf = await sharp(bytes, { animated: mediaType === 'image/gif' })
+        outBuf = await getSharp()(bytes, { animated: mediaType === 'image/gif' })
           .resize(newW, newH, { fit: 'inside' })
           .toBuffer()
         resized = true
-        const m2 = await sharp(outBuf).metadata()
+        const m2 = await getSharp()(outBuf).metadata()
         width = m2.width ?? newW
         height = m2.height ?? newH
       } else {
         // no resize needed, but still strip EXIF/GPS metadata (privacy)
-        outBuf = await sharp(bytes, { animated: mediaType === 'image/gif' }).toBuffer()
+        outBuf = await getSharp()(bytes, { animated: mediaType === 'image/gif' }).toBuffer()
       }
 
       images.push({

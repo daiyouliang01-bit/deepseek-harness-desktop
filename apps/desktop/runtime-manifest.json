@@ -1,0 +1,13 @@
+{
+  "$comment": "Pinned self-contained runtime for the packaged .app (ADR-002 / Task 2.3). The desktop app bundles these exact versions so it runs without any dsh/Node on the user's PATH. Dev builds (pnpm dev) still use PATH dsh; only `pnpm package` consumes this manifest.",
+  "dsh": {
+    "package": "@deepseek-ai/dsh",
+    "version": "0.1.0-rc.6"
+  },
+  "node": {
+    "version": "22.23.1",
+    "$comment": "Node major must match the version node-pty/sharp prebuilds target. 22.x prebuilds are shipped by node-pty 1.x and @img/sharp 0.35.x."
+  },
+  "registry": "https://registry.npmmirror.com",
+  "$commentMirrors": "Mirrors tried in order if the primary registry is unreachable. npmmirror is the CN fallback used during dev."
+}

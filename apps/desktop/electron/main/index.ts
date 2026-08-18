@@ -1,8 +1,11 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, shell, Tray } from 'electron'
-import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
+import { randomBytes } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { isAllowedNavigation } from '../navigation-guard'
+import { autolaunchEnabled, HIDDEN_LAUNCH_ARG, setAutolaunch, shouldStartHidden, type LoginWindowController } from '../autolaunch'
 import { KeyVault } from '../keys/vault'
 import { intakeImages } from '../attachments/image-intake'
 import { SessionAdapter } from '../adapter/session-adapter'
@@ -12,8 +15,12 @@ import { SessionStore } from '@dshd/session-store'
 import { buildAppMenuTemplate } from '../menu'
 import { RuntimeNotifier } from '../notifications'
 import { HarnessProcess } from '../runtime/harness-process'
-import { findDsh } from '../runtime/dsh-bin'
+import { findRuntime } from '../runtime/dsh-bin'
 import type { RuntimeStatus } from '../runtime/runtime-types'
+import { LedgerIntegration, readDshVersion } from '../runtime/ledger-integration'
+import { ensurePhoneSyncLinked } from '../runtime/phone-sync-installer'
+import { PinGate } from '../runtime/pin-gate'
+import { applySidebarTrustPatch } from '../runtime/sidebar-trust-patch'
 import { GlobalShortcutManager } from '../shortcuts'
 import { buildTrayMenuTemplate } from '../tray'
 import { TRAY_ICON_DATA_URL } from '../tray-icon'
@@ -101,16 +108,25 @@ const trayActions = {
   toggleWindow,
   startRuntime: () => void startRuntime(),
   stopRuntime: () => void runtime.stop(),
+  openPhonePanel: () => openCustomShell('phone'),
   openLogs: async () => {
     if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true })
     await shell.openPath(LOG_DIR)
+  },
+  toggleAutolaunch: () => {
+    setAutolaunch(startHiddenCtrl, !autolaunchEnabled(startHiddenCtrl))
+    updateTrayMenu()
   },
   quit: () => app.quit()
 }
 
 function updateTrayMenu(): void {
   if (!tray) return
-  tray.setContextMenu(Menu.buildFromTemplate(buildTrayMenuTemplate(runtime.getStatus().state, trayActions)))
+  tray.setContextMenu(
+    Menu.buildFromTemplate(
+      buildTrayMenuTemplate(runtime.getStatus().state, trayActions, autolaunchEnabled(startHiddenCtrl))
+    )
+  )
 }
 
 function createTray(): void {
@@ -192,9 +208,11 @@ function loadRendererScreen(): void {
 // via an official `--patch` overlay shipped with the app.
 function desktopPatchPath(): string {
   // packaged: <resources>/desktop-tools.patch.yml; dev: repo resources dir
+  // dev 下 __dirname = apps/desktop/out/main,文件在 apps/desktop/resources/,
+  // 所以是 ../../resources(退两级:out/main → out → desktop),不是 ../../../。
   const candidates = [
     join(process.resourcesPath ?? '', 'desktop-tools.patch.yml'),
-    join(__dirname, '../../../resources/desktop-tools.patch.yml')
+    join(__dirname, '../../resources/desktop-tools.patch.yml')
   ]
   for (const p of candidates) {
     if (existsSync(p)) return p
@@ -202,10 +220,83 @@ function desktopPatchPath(): string {
   return candidates[1]
 }
 
+// --- process ledger (Task 7.1, plan v1.4): single-instance protection ---
+// The ledger records which dsh child we spawned so a crashed / force-quit run
+// can be reaped on the next launch (triple-checked, never touching manual
+// instances or reused PIDs).
+const runtimeDescriptor = findRuntime()
+const ledger = new LedgerIntegration({
+  userDataDir: app.getPath('userData'),
+  appSignature: 'desktop-tools.patch.yml',
+  dshVersion: readDshVersion(runtimeDescriptor)
+})
+
+// Phase 2.1: preferred fixed port (override with DSH_DESKTOP_PORT env).
+const PREFERRED_PORT = Number(process.env['DSH_DESKTOP_PORT'] ?? '') || 35880
+
+// PIN gate: loopback reverse proxy in front of dsh web, exposed via the
+// tunnel so phones must enter a PIN before reaching the harness.
+// Override the gate port with DSH_PIN_GATE_PORT; the upstream port is derived
+// from the runtime's ready URL at start time.
+const PIN_GATE_PORT = Number(process.env['DSH_PIN_GATE_PORT'] ?? '') || 35881
+let pinGate: PinGate | null = null
+
+// Companion token (plan R30/R34): one stable secret shared by the PIN gate,
+// the phone-sync plugin (injected into the dsh child env) and this main
+// process's control calls (tunnelCall). Persisted at ~/.dsh/companion/token
+// (0600) so app restarts keep the same value; gate and plugin both rely on
+// this single source of truth.
+const COMPANION_TOKEN_FILE = (() => {
+  const dshHome = process.env['DSH_HOME'] || join(homedir(), '.dsh')
+  return join(dshHome, 'companion', 'token')
+})()
+
+function ensureCompanionToken(): string {
+  const existing = process.env['DSH_COMPANION_TOKEN']
+  if (existing) return existing
+  try {
+    if (existsSync(COMPANION_TOKEN_FILE)) {
+      const raw = readFileSync(COMPANION_TOKEN_FILE, 'utf8').trim()
+      if (raw.length >= 16) {
+        process.env['DSH_COMPANION_TOKEN'] = raw
+        return raw
+      }
+    }
+    const token = randomBytes(32).toString('hex')
+    mkdirSync(dirname(COMPANION_TOKEN_FILE), { recursive: true })
+    writeFileSync(COMPANION_TOKEN_FILE, token + '\n', { mode: 0o600 })
+    process.env['DSH_COMPANION_TOKEN'] = token
+    return token
+  } catch (err) {
+    // Fallback: ephemeral token for this run only (never fail to boot).
+    const token = randomBytes(32).toString('hex')
+    process.env['DSH_COMPANION_TOKEN'] = token
+    console.warn('[companion] token persistence failed, using ephemeral token', err)
+    return token
+  }
+}
+
+// Mobile remote (plan v1.5): extra authorities the dsh /api browser-trust
+// fence accepts (comma-separated, e.g. DSH_TRUSTED_HOSTS=dsh.dpharness.xyz).
+// Without this, phones reaching dsh via the tunnel get HTTP 403 on every RPC.
+const TRUSTED_HOSTS = (process.env['DSH_TRUSTED_HOSTS'] ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+
 const runtime = new HarnessProcess({
-  dshBin: findDsh() ?? 'dsh',
+  runtime: runtimeDescriptor,
   topLevelArgs: ['--patch', desktopPatchPath()],
-  onOutput: logLine
+  extraArgs: TRUSTED_HOSTS.length > 0 ? TRUSTED_HOSTS.flatMap((h) => ['--trusted-host', h]) : [],
+  port: PREFERRED_PORT,
+  autoRestart: true,
+  onOutput: logLine,
+  onSpawned: (pid, startedAt) => ledger.recordSpawned(pid, startedAt),
+  onReady: (info) => ledger.recordReady(info),
+  onStopped: (clean) => {
+    if (clean) ledger.recordCleanStop()
+    else ledger.recordUnexpectedExit()
+  }
 })
 
 // --- session adapter + stream bridge (M2/M3): wire client + live events ---
@@ -247,14 +338,17 @@ function pushStatus(): void {
 }
 
 /** Load the shell renderer and ask it to show the custom shell view. */
-function openCustomShell(): void {
+function openCustomShell(view?: string): void {
   shellRequested = true
   uiLoaded = false
   loadRendererScreen()
   const win = mainWindow
   if (win) {
     win.webContents.once('did-finish-load', () => {
-      win.webContents.send('ui:open-shell')
+      // Push the current runtime status so the shell renderer does not show
+      // its "Runtime unavailable" recovery screen on first load.
+      pushStatus()
+      win.webContents.send('ui:open-shell', view ?? 'conversations')
     })
   }
 }
@@ -267,7 +361,45 @@ async function openOfficialUI(): Promise<{ ok: boolean; reason?: string }> {
   shellRequested = false
   uiLoaded = true
   await mainWindow?.loadURL(status.ready.url)
+  injectPhoneFab()
   return { ok: true }
+}
+
+/**
+ * Inject a floating "📱 手机" button into the official Web UI so the phone
+ * panel (PIN settings / tunnel) is reachable from the main window without
+ * hunting for tray/menu entries. The button calls the preload bridge.
+ */
+function injectPhoneFab(): void {
+  const win = mainWindow
+  if (!win) return
+  const js = `
+    (() => {
+      if (document.getElementById('dshd-phone-fab')) return;
+      const btn = document.createElement('button');
+      btn.id = 'dshd-phone-fab';
+      btn.textContent = '📱 手机';
+      btn.title = '手机访问 / PIN 设置';
+      btn.style.cssText = [
+        'position:fixed', 'bottom:20px', 'right:20px', 'z-index:2147483647',
+        'padding:10px 16px', 'border:none', 'border-radius:999px',
+        'background:#4f7cff', 'color:#fff', 'font-size:14px', 'font-weight:600',
+        'cursor:pointer', 'box-shadow:0 4px 16px rgba(0,0,0,.35)',
+        'font-family:-apple-system,system-ui,sans-serif'
+      ].join(';');
+      btn.addEventListener('click', () => {
+        if (window.desktop && typeof window.desktop.openPhonePanel === 'function') {
+          void window.desktop.openPhonePanel();
+        }
+      });
+      document.body.appendChild(btn);
+    })();
+  `
+  win.webContents.once('did-finish-load', () => {
+    win.webContents.executeJavaScript(js).catch(() => {
+      /* injected page may block eval; non-fatal */
+    })
+  })
 }
 
 runtime.on('statusChange', (status: RuntimeStatus) => {
@@ -277,9 +409,14 @@ runtime.on('statusChange', (status: RuntimeStatus) => {
     uiLoaded = true
     // Load ONLY the validated loopback URL.
     void mainWindow.loadURL(status.ready.url)
+    injectPhoneFab()
+    // Start the PIN gate in front of the actual dsh web port so the tunnel
+    // (phone access) never reaches dsh without the PIN.
+    void startPinGate(status.ready.url)
   } else if (status.state === 'error' || status.state === 'stopped') {
     sessionAdapter = null // runtime gone → adapter must rebuild on next ready
     stopStreamBridge()
+    stopPinGate()
     if (uiLoaded) {
       // Runtime died while the Web UI was loaded → go back to the shell
       // renderer (loading/recovery screen).
@@ -292,6 +429,58 @@ runtime.on('statusChange', (status: RuntimeStatus) => {
 
 async function startRuntime(): Promise<RuntimeStatus> {
   try {
+    // Companion wiring (plan R30/R13): the dsh child inherits process.env,
+    // so publish the gate port + shared token BEFORE the runtime spawns.
+    process.env['DSH_PIN_GATE_PORT'] = String(PIN_GATE_PORT)
+    ensureCompanionToken()
+
+    // Task 7.2: link the bundled phone-sync plugin into the web profile so the
+    // spawned dsh can load it (idempotent; failure only disables phone access).
+    const dshHome = process.env['DSH_HOME'] || join(require('node:os').homedir(), '.dsh')
+    const linked = ensurePhoneSyncLinked(dshHome, join(__dirname, '../..'))
+    if (linked) {
+      logLine('stdout', `[phone-sync] linked ${linked}`)
+    }
+
+    // Task 7.x: patch better-sidebar's /sidebar fence so it honors
+    // DSH_TRUSTED_HOSTS (its trustedHostsOf only reads the raw loader row,
+    // so remote /sidebar requests 403 even with --trusted-host set).
+    // Idempotent and never fatal; failure keeps /sidebar loopback-only.
+    applySidebarTrustPatch(dshHome)
+
+    // Plan v1.4 (B): reap any orphan from a previous crashed run BEFORE
+    // spawning, so we never run two dsh instances against the same data dir.
+    const reaped = await ledger.reapBeforeSpawn()
+    if (reaped.reaped.length > 0) {
+      logLine('stdout', `[ledger] reaped ${reaped.reaped.join(', ')} from previous run`)
+    } else if (reaped.dropped.length > 0) {
+      logLine('stdout', `[ledger] dropped stale ledger entries ${reaped.dropped.join(', ')} (no kill)`)
+    }
+
+    // Plan v1.4 (C): report dsh instances running outside the ledger.
+    // Report-only — the user decides (modal in the shell renderer).
+    const coexisting = ledger.detectCoexisting()
+    const manual = coexisting.filter((i) => i.kind === 'manual')
+    const appOrphans = coexisting.filter((i) => i.kind === 'app-orphan')
+    if (appOrphans.length > 0) {
+      logLine('stdout', `[ledger] detected ${appOrphans.length} app-signature leftover(s) outside ledger: ${appOrphans.map((i) => i.pid).join(', ')}`)
+    }
+    if (manual.length > 0) {
+      logLine('stdout', `[ledger] detected ${manual.length} manual dsh instance(s) sharing the data dir: ${manual.map((i) => i.pid).join(', ')}`)
+      mainWindow?.webContents.send('runtime:coexistence', {
+        manual: manual.map((i) => ({ pid: i.pid, command: i.command })),
+        appOrphans: appOrphans.map((i) => ({ pid: i.pid, command: i.command }))
+      })
+    }
+
+    // Phase 2.3 (D): reuse a healthy already-running dsh instead of spawning.
+    const reused = await ledger.tryReuse(PREFERRED_PORT)
+    if (reused) {
+      logLine('stdout', `[ledger] reusing existing dsh at ${reused.url}`)
+      runtime.adopt(reused)
+      return runtime.getStatus()
+    }
+
     await runtime.start()
   } catch (err) {
     // status already reflects 'error' via the event; nothing else to do
@@ -301,6 +490,23 @@ async function startRuntime(): Promise<RuntimeStatus> {
 
 // --- window creation ---
 const APP_ICON_PNG = join(__dirname, '../../build/icon.png')
+
+// P1: an autostart launch (open-at-login) keeps the window hidden until the
+// user summons it via tray/global-shortcut.
+const startHiddenCtrl: LoginWindowController = {
+  platform: process.platform,
+  argv: process.argv,
+  openedAtLogin: () => app.getLoginItemSettings().wasOpenedAtLogin,
+  setOpenAtLogin: (enabled) => {
+    app.setLoginItemSettings({
+      openAtLogin: enabled,
+      // Windows: register --hidden so an autostart launch stays out of sight.
+      args: process.platform === 'win32' ? [HIDDEN_LAUNCH_ARG] : []
+    })
+  },
+  isOpenAtLogin: () => app.getLoginItemSettings().openAtLogin
+}
+const startHidden = shouldStartHidden(startHiddenCtrl)
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -321,7 +527,9 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('ready-to-show', () => {
+    if (!startHidden) mainWindow?.show()
+  })
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -375,7 +583,96 @@ ipcMain.handle('runtime:open-logs', async () => {
   return true
 })
 
+// --- phone access (Task 7.2): tunnel control via the phone-sync plugin ---
+// The plugin exposes HTTP routes on the dsh web server (/phn/api/tunnel/*);
+// we proxy them over IPC so the shell renderer never talks to dsh directly.
+
+interface TunnelStatus {
+  phase: string
+  url: string | null
+  message: string | null
+  startedAt: number
+  upstream: string
+}
+
+async function tunnelCall(path: string, method = 'GET'): Promise<{ ok: boolean; error?: string; value?: TunnelStatus }> {
+  const status = runtime.getStatus()
+  if (status.state !== 'ready' || !status.ready) return { ok: false, error: `runtime not ready (${status.state})` }
+  try {
+    const headers: Record<string, string> = {}
+    // Plan R30: the plugin's /phn routes require the companion token; the
+    // desktop control channel must present it too.
+    const token = process.env['DSH_COMPANION_TOKEN']
+    if (token) headers['x-dsh-companion-token'] = token
+    const res = await fetch(`${status.ready.url}${path}`, { method, headers })
+    const body = (await res.json()) as TunnelStatus
+    return { ok: true, value: body }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+// --- PIN gate (Task 7.3): loopback proxy in front of dsh web ---
+
+function startPinGate(upstreamUrl: string): void {
+  if (pinGate) return
+  try {
+    const gate = new PinGate({
+      port: PIN_GATE_PORT,
+      upstreamUrl,
+      stateDir: join(app.getPath('userData'), 'state'),
+      companionToken: process.env['DSH_COMPANION_TOKEN'] || ensureCompanionToken(),
+      // The phone user wants the FULL dsh web UI through the PIN (same as the
+      // desktop window), not just the /phn mobile console. Allow by default;
+      // set DSH_PIN_GATE_ALLOW_FULL=0 to restrict back to the phone console.
+      allowFullApp: process.env['DSH_PIN_GATE_ALLOW_FULL'] !== '0'
+    })
+    void gate.start().then((port) => {
+      pinGate = gate
+      logLine('stdout', `[pin-gate] listening on 127.0.0.1:${port} → ${upstreamUrl}`)
+    }).catch((err) => {
+      logLine('stderr', `[pin-gate] failed to start: ${String(err)}`)
+    })
+  } catch (err) {
+    logLine('stderr', `[pin-gate] init failed: ${String(err)}`)
+  }
+}
+
+function stopPinGate(): void {
+  pinGate?.stop()
+  pinGate = null
+}
+
+ipcMain.handle('phone:get-status', () => tunnelCall('/phn/api/tunnel/status'))
+ipcMain.handle('phone:start', () => tunnelCall('/phn/api/tunnel/start', 'POST'))
+ipcMain.handle('phone:stop', () => tunnelCall('/phn/api/tunnel/stop', 'POST'))
+
+// PIN gate IPC: set/check the PIN from the shell renderer.
+ipcMain.handle('pin:has', () => ({ ok: true, value: pinGate?.hasPin() ?? false }))
+ipcMain.handle('pin:set', (_e, pin: string) => {
+  if (!pinGate) return { ok: false, error: 'runtime not ready (PIN gate not started)' }
+  const result = pinGate.setPin(typeof pin === 'string' ? pin : '')
+  if (result.ok) pinGate.resetLock() // a fresh PIN also clears stray lock states
+  return result
+})
+ipcMain.handle('pin:status', () => ({
+  ok: true,
+  value: pinGate ? pinGate.status() : { enabled: false, locked: false, lockRemainingMs: 0 }
+}))
+// Lockout recovery (plan R17): only the desktop owner can unblock; a stranger
+// DoS-ing the public URL must not keep the real user locked out.
+ipcMain.handle('pin:reset-lock', () => {
+  if (!pinGate) return { ok: false, error: 'PIN gate not started' }
+  pinGate.resetLock()
+  return { ok: true }
+})
+
 ipcMain.handle('ui:open-official', () => openOfficialUI())
+ipcMain.handle('ui:open-phone-panel', () => {
+  if (!mainWindow) return { ok: false, error: 'no window' }
+  openCustomShell('phone')
+  return { ok: true }
+})
 
 // --- key vault IPC (Task 3.5): secrets never cross to the renderer ---
 
@@ -463,6 +760,13 @@ ipcMain.handle('agent:set-active-session', (_e, sessionId: string | null) => {
   return { ok: true }
 })
 ipcMain.handle('agent:stream-state', () => ({ running: streamBridge?.isRunning() ?? false }))
+
+// --- autolaunch IPC (P1) ---
+ipcMain.handle('autolaunch:get', () => ({ enabled: autolaunchEnabled(startHiddenCtrl) }))
+ipcMain.handle('autolaunch:set', (_e, enabled: boolean) => {
+  setAutolaunch(startHiddenCtrl, enabled)
+  return { ok: true }
+})
 ipcMain.handle('agent:approve', async (_e, sessionId: string, approvalId: string, outcome: 'allowed-once' | 'rejected') => {
   const adapter = ensureSessionAdapter()
   const rpcId = streamBridge?.rpcIdFor(approvalId)
@@ -518,11 +822,24 @@ app.whenReady().then(() => {
   if (!shortcutManager.register()) {
     console.warn('[shortcut] summon accelerator is taken by another app')
   }
+  // P1: register dsh:// deep-link (packaged only; dev may fail harmlessly).
+  try {
+    app.setAsDefaultProtocolClient('dsh')
+  } catch {
+    /* non-fatal in dev */
+  }
   // Boot the runtime immediately (Task 1.3: auto-start on launch).
   void startRuntime()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+// P1: forward dsh:// deep-links to the renderer (focus window first).
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  toggleWindow()
+  mainWindow?.webContents.send('deep-link', url)
 })
 
 // Tray keeps the app alive; quitting happens via tray/menu/Cmd+Q.
@@ -535,4 +852,20 @@ app.on('before-quit', () => {
   isQuitting = true
   shortcutManager.dispose()
   void runtime.stop()
+})
+
+// will-quit: belt-and-braces for paths where before-quit's async stop may not
+// have settled (plan v1.4 R7 — the ledger clean marker is written synchronously
+// inside recordCleanStop via saveLedger).
+app.on('will-quit', () => {
+  isQuitting = true
+})
+
+// SIGTERM/SIGINT (e.g. `kill <pid>`, system shutdown on Linux): give the
+// child a clean stop instead of leaving it orphaned (plan v1.4 G1).
+process.on('SIGTERM', () => {
+  void runtime.stop().finally(() => app.quit())
+})
+process.on('SIGINT', () => {
+  void runtime.stop().finally(() => app.quit())
 })

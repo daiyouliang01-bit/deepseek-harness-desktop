@@ -167,4 +167,214 @@ describe('HarnessProcess (fake child)', () => {
     expect(states).toContain('starting')
     expect(states).toContain('ready')
   })
+
+  it('spawns with detached:true on POSIX (R3 — own process group for tree kill)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    const hp = new HarnessProcess()
+    const readyPromise = hp.start()
+    emitStdout('dsh web: http://127.0.0.1:1234')
+    await readyPromise
+    const [, , opts] = spawnMock.mock.calls[0] as unknown as [string, string[], { detached?: boolean }]
+    // vitest runs on the dev machine (darwin/linux); on win32 the app passes false
+    if (process.platform !== 'win32') {
+      expect(opts.detached).toBe(true)
+    }
+  })
+
+  it('invokes ledger callbacks: onSpawned with pid+startedAt, onReady with info, onStopped(clean) on stop', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    const spawned: Array<[number, number]> = []
+    const readies: string[] = []
+    const stopped: boolean[] = []
+    const hp = new HarnessProcess({
+      onSpawned: (pid, startedAt) => spawned.push([pid, startedAt]),
+      onReady: (info) => readies.push(info.url),
+      onStopped: (clean) => stopped.push(clean)
+    })
+    const readyPromise = hp.start()
+    emitStdout('dsh web: http://127.0.0.1:1234')
+    await readyPromise
+
+    expect(spawned).toHaveLength(1)
+    expect(spawned[0][0]).toBe(4242)
+    expect(spawned[0][1]).toBeGreaterThan(0)
+    expect(readies).toEqual(['http://127.0.0.1:1234'])
+
+    fake.exitCode = 0
+    fake.emit('exit', 0, 'SIGTERM')
+    await hp.stop()
+    expect(stopped).toEqual([true])
+  })
+
+  it('invokes onStopped(false) on an unexpected exit after ready', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    const stopped: boolean[] = []
+    const hp = new HarnessProcess({ onStopped: (clean) => stopped.push(clean) })
+    const readyPromise = hp.start()
+    emitStdout('dsh web: http://127.0.0.1:1234')
+    await readyPromise
+
+    fake.exitCode = 7
+    fake.emit('exit', 7, null)
+    expect(stopped).toEqual([false])
+  })
+
+  it('uses the fixed port when it is free (Phase 2.2)', async () => {
+    // real timers: isPortFree() does real net I/O which fake timers never settle
+    vi.useRealTimers()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    const { findFreePort } = await import('./port-probe')
+    const port = (await findFreePort(49_400, 5)) as number
+
+    const hp = new HarnessProcess({ port })
+    const readyPromise = hp.start()
+    // start() awaits isPortFree() before registering stdout listeners — wait
+    // a tick so the listener is attached before we emit the ready line.
+    await new Promise((r) => setTimeout(r, 50))
+    emitStdout(`dsh web: http://127.0.0.1:${port}`)
+    await readyPromise
+
+    const [, args] = spawnMock.mock.calls[0] as unknown as [string, string[]]
+    expect(args).toContain(String(port))
+    vi.useFakeTimers()
+  })
+
+  it('falls back to a free port when the fixed port is occupied (R24)', async () => {
+    vi.useRealTimers()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    // occupy the preferred port
+    const { createServer } = await import('node:net')
+    const blocker = createServer()
+    await new Promise<void>((resolve) => blocker.listen(49_410, '127.0.0.1', () => resolve()))
+
+    const hp = new HarnessProcess({ port: 49_410 })
+    const readyPromise = hp.start()
+    await new Promise((r) => setTimeout(r, 50))
+    emitStdout('dsh web: http://127.0.0.1:49411')
+    await readyPromise
+    blocker.close()
+
+    const [, args] = spawnMock.mock.calls[0] as unknown as [string, string[]]
+    // must NOT use the blocked port; must carry a concrete port from the fallback
+    expect(args).not.toContain('49410')
+    const portIdx = args.indexOf('--port')
+    expect(portIdx).toBeGreaterThan(-1)
+    const fallback = Number(args[portIdx + 1])
+    expect(fallback).toBeGreaterThan(0)
+    expect(fallback).not.toBe(49_410)
+    vi.useFakeTimers()
+  })
+
+  it('adopt() marks ready without spawning (Phase 2.3)', async () => {
+    const hp = new HarnessProcess()
+    const readies: string[] = []
+    hp.on('statusChange', (s) => {
+      if (s.state === 'ready' && s.ready) readies.push(s.ready.url)
+    })
+    hp.adopt({ url: 'http://127.0.0.1:35880', port: 35880, startupMs: 0 })
+    expect(hp.getStatus().state).toBe('ready')
+    expect(hp.getStatus().ready?.url).toBe('http://127.0.0.1:35880')
+    expect(spawnMock).not.toHaveBeenCalled()
+    expect(readies).toEqual(['http://127.0.0.1:35880'])
+  })
+
+  it('adopt() throws when already ready', () => {
+    const hp = new HarnessProcess()
+    hp.adopt({ url: 'http://127.0.0.1:1', port: 1, startupMs: 0 })
+    expect(() => hp.adopt({ url: 'http://127.0.0.1:2', port: 2, startupMs: 0 })).toThrow(/already ready/)
+  })
+
+  it('auto-restarts after an unexpected exit (R9)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    const hp = new HarnessProcess({ autoRestart: true })
+    const readyPromise = hp.start()
+    emitStdout('dsh web: http://127.0.0.1:1234')
+    await readyPromise
+    expect(hp.getStatus().state).toBe('ready')
+
+    // unexpected crash after ready
+    fake.exitCode = 7
+    fake.emit('exit', 7, null)
+    expect(hp.getStatus().state).toBe('starting') // backoff phase
+
+    // backoff elapses (fake timers) → start() is called again (new spawn)
+    const fake2 = new FakeChild()
+    fake2.pid = 8888
+    spawnMock.mockReturnValueOnce(fake2 as unknown as ChildProcess)
+    await vi.advanceTimersByTimeAsync(1_000)
+    // new child emits ready
+    ;(fake2.stdout as EventEmitter).emit('data', Buffer.from('dsh web: http://127.0.0.1:5678\n'))
+    await vi.advanceTimersByTimeAsync(10)
+    expect(hp.getStatus().state).toBe('ready')
+    expect(hp.getStatus().ready?.url).toBe('http://127.0.0.1:5678')
+    expect(spawnMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('gives up after maxRestartAttempts fast crashes (R22)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    const hp = new HarnessProcess({ autoRestart: true, maxRestartAttempts: 2 })
+    const readyPromise = hp.start()
+    emitStdout('dsh web: http://127.0.0.1:1234')
+    await readyPromise
+
+    // crash #1 → backoff → restart
+    fake.exitCode = 7
+    fake.emit('exit', 7, null)
+    const fake2 = new FakeChild()
+    fake2.pid = 9001
+    spawnMock.mockReturnValueOnce(fake2 as unknown as ChildProcess)
+    await vi.advanceTimersByTimeAsync(1_000)
+    ;(fake2.stdout as EventEmitter).emit('data', Buffer.from('dsh web: http://127.0.0.1:2222\n'))
+    await vi.advanceTimersByTimeAsync(10)
+    expect(hp.getStatus().state).toBe('ready')
+
+    // crash #2 → backoff → restart
+    fake2.exitCode = 7
+    fake2.emit('exit', 7, null)
+    const fake3 = new FakeChild()
+    fake3.pid = 9002
+    spawnMock.mockReturnValueOnce(fake3 as unknown as ChildProcess)
+    await vi.advanceTimersByTimeAsync(2_000)
+    ;(fake3.stdout as EventEmitter).emit('data', Buffer.from('dsh web: http://127.0.0.1:3333\n'))
+    await vi.advanceTimersByTimeAsync(10)
+    expect(hp.getStatus().state).toBe('ready')
+
+    // crash #3 → attempts exceed max (2) → give up
+    fake3.exitCode = 7
+    fake3.emit('exit', 7, null)
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(hp.getStatus().state).toBe('error')
+    expect(hp.getStatus().lastError).toContain('giving up')
+    expect(spawnMock).toHaveBeenCalledTimes(3) // no 4th spawn
+  })
+
+  it('does NOT auto-restart after a user-initiated stop()', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    const hp = new HarnessProcess({ autoRestart: true })
+    const readyPromise = hp.start()
+    emitStdout('dsh web: http://127.0.0.1:1234')
+    await readyPromise
+
+    const stopPromise = hp.stop()
+    fake.exitCode = 0
+    fake.emit('exit', 0, 'SIGTERM') // clean exit during stop
+    await stopPromise
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(hp.getStatus().state).toBe('stopped')
+    expect(spawnMock).toHaveBeenCalledTimes(1) // no restart spawn
+  })
+
+  it('does NOT auto-restart on a clean exit (code 0)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    const hp = new HarnessProcess({ autoRestart: true })
+    const readyPromise = hp.start()
+    emitStdout('dsh web: http://127.0.0.1:1234')
+    await readyPromise
+
+    fake.exitCode = 0
+    fake.emit('exit', 0, null)
+    expect(hp.getStatus().state).toBe('stopped')
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+  })
 })

@@ -45,6 +45,34 @@ function UpdateSection({ tokens }: { tokens: Tokens }): React.JSX.Element {
   )
 }
 
+function DesktopSection({ tokens }: { tokens: Tokens }): React.JSX.Element {
+  const [autolaunch, setAutolaunch] = useState<boolean | null>(null)
+  const { colors, space } = tokens
+
+  useEffect(() => {
+    void window.desktop.autolaunchGet().then((r) => setAutolaunch(r.enabled))
+  }, [])
+
+  return (
+    <section style={{ background: colors.surface, borderRadius: 10, padding: space.md, marginBottom: space.md }}>
+      <h3 style={{ color: colors.text, fontSize: 18, margin: `0 0 ${space.sm}px` }}>Desktop</h3>
+      <label style={{ display: 'flex', alignItems: 'center', gap: space.sm, color: colors.textMuted, fontSize: 14, cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={autolaunch === true}
+          onChange={(e) => {
+            const next = e.target.checked
+            setAutolaunch(next)
+            void window.desktop.autolaunchSet(next)
+          }}
+        />
+        开机时自动启动（登录后静默驻留托盘）
+      </label>
+      {autolaunch === null && <span style={{ color: colors.textMuted, fontSize: 12 }}>…</span>}
+    </section>
+  )
+}
+
 /**
  * Task 3.1 settings panel. Runtime controls + model/provider placeholders.
  * API key entry is intentionally NOT in the renderer (safeStorage lives in
@@ -112,6 +140,7 @@ export function SettingsPanel({
       </section>
 
       <UpdateSection tokens={tokens} />
+      <DesktopSection tokens={tokens} />
 
       <section style={{ background: colors.surface, borderRadius: radius.md, padding: space.md }}>
         <h3 style={{ color: colors.text, fontSize: font.sizeLg, margin: `0 0 ${space.sm}px` }}>Official Web UI</h3>
