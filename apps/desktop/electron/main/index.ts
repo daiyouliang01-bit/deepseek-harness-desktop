@@ -21,6 +21,8 @@ import { findRuntime } from '../runtime/dsh-bin'
 import type { RuntimeStatus } from '../runtime/runtime-types'
 import { LedgerIntegration, readDshVersion } from '../runtime/ledger-integration'
 import { ensurePhoneSyncLinked } from '../runtime/phone-sync-installer'
+import { ensureCommunityLinksLinked } from '../runtime/community-links-installer'
+import { ensurePhoneSettingsLinked } from '../runtime/phone-settings-installer'
 import { PinGate } from '../runtime/pin-gate'
 import { applySidebarTrustPatch } from '../runtime/sidebar-trust-patch'
 import { GlobalShortcutManager } from '../shortcuts'
@@ -372,46 +374,13 @@ async function openOfficialUI(): Promise<{ ok: boolean; reason?: string }> {
   shellRequested = false
   uiLoaded = true
   await mainWindow?.loadURL(status.ready.url)
-  injectPhoneFab()
   return { ok: true }
 }
 
-/**
- * Inject a floating "📱 手机" button into the official Web UI so the phone
- * panel (PIN settings / tunnel) is reachable from the main window without
- * hunting for tray/menu entries. The button calls the preload bridge.
- */
-function injectPhoneFab(): void {
-  const win = mainWindow
-  if (!win) return
-  const js = `
-    (() => {
-      if (document.getElementById('dshd-phone-fab')) return;
-      const btn = document.createElement('button');
-      btn.id = 'dshd-phone-fab';
-      btn.textContent = '📱 手机';
-      btn.title = '手机访问 / PIN 设置';
-      btn.style.cssText = [
-        'position:fixed', 'bottom:20px', 'right:20px', 'z-index:2147483647',
-        'padding:10px 16px', 'border:none', 'border-radius:999px',
-        'background:#4f7cff', 'color:#fff', 'font-size:14px', 'font-weight:600',
-        'cursor:pointer', 'box-shadow:0 4px 16px rgba(0,0,0,.35)',
-        'font-family:-apple-system,system-ui,sans-serif'
-      ].join(';');
-      btn.addEventListener('click', () => {
-        if (window.desktop && typeof window.desktop.openPhonePanel === 'function') {
-          void window.desktop.openPhonePanel();
-        }
-      });
-      document.body.appendChild(btn);
-    })();
-  `
-  win.webContents.once('did-finish-load', () => {
-    win.webContents.executeJavaScript(js).catch(() => {
-      /* injected page may block eval; non-fatal */
-    })
-  })
-}
+// NOTE: the old floating "📱 手机" FAB (injectPhoneFab) was removed — the
+// phone entry now lives in the official web UI's 设置 → 手机 page (provided
+// by the @dshd/phone-settings bundle), so clicking it no longer switches the
+// window to the shell renderer (which had no way back).
 
 runtime.on('statusChange', (status: RuntimeStatus) => {
   notifier.handleStatus(status)
@@ -420,7 +389,6 @@ runtime.on('statusChange', (status: RuntimeStatus) => {
     uiLoaded = true
     // Load ONLY the validated loopback URL.
     void mainWindow.loadURL(status.ready.url)
-    injectPhoneFab()
     // Start the PIN gate in front of the actual dsh web port so the tunnel
     // (phone access) never reaches dsh without the PIN.
     void startPinGate(status.ready.url)
@@ -451,6 +419,21 @@ async function startRuntime(): Promise<RuntimeStatus> {
     const linked = ensurePhoneSyncLinked(dshHome, join(__dirname, '../..'))
     if (linked) {
       logLine('stdout', `[phone-sync] linked ${linked}`)
+    }
+
+    // Task: link the bundled community-links plugin into the web profile so
+    // the spawned dsh can load it (idempotent; failure only hides the
+    // community-resource entry).
+    const linkedCommunity = ensureCommunityLinksLinked(dshHome, join(__dirname, '../..'))
+    if (linkedCommunity) {
+      logLine('stdout', `[community-links] linked ${linkedCommunity}`)
+    }
+
+    // Task: link the bundled phone-settings plugin into the web profile so the
+    // phone access settings page (设置 → 手机) is available in the official UI.
+    const linkedPhoneSettings = ensurePhoneSettingsLinked(dshHome, join(__dirname, '../..'))
+    if (linkedPhoneSettings) {
+      logLine('stdout', `[phone-settings] linked ${linkedPhoneSettings}`)
     }
 
     // Task 7.x: patch better-sidebar's /sidebar fence so it honors

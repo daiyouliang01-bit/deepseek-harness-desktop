@@ -1,0 +1,6 @@
+# @dshd/phone-settings — phone access settings page for the DSH Desktop shell.
+# Mounted by the desktop profile's cordis.patch.yml insert list (same
+# mechanism as @dshd/phone-sync / @dshd/community-links).
+- insert:
+    - id: phone-settings
+      name: '@dshd/phone-settings'

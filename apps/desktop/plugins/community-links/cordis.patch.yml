@@ -1,0 +1,6 @@
+# @dshd/community-links — community resource links for the DSH Desktop shell.
+# Mounted by the desktop profile's cordis.patch.yml insert list (same
+# mechanism as @dshd/phone-sync).
+- insert:
+    - id: community-links
+      name: '@dshd/community-links'
