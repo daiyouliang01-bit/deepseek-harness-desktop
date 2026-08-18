@@ -63,16 +63,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Dev package: verifies prepare-runtime + electron-builder produce an
-      # artifact. Requires a global dsh on the runner (installed via npm).
-      - name: Install dsh CLI
-        run: npm install -g @deepseek-ai/dsh
+      - name: Build
+        run: pnpm build
 
-      - name: Dev package
-        run: pnpm --filter @dshd/desktop package
+      # macOS-only release package: prepare the self-contained runtime
+      # (Node + dsh closure), then electron-builder produces the .dmg/.zip.
+      # The packaged app needs no dsh/Node on the user's PATH (ADR-002).
+      - name: Prepare self-contained runtime
+        run: node apps/desktop/scripts/prepare-runtime.mjs --release
+
+      - name: Package (macOS dmg + zip)
+        run: pnpm --filter @dshd/desktop exec electron-builder --mac --config apps/desktop/electron-builder.yml
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-dev-package
+          name: desktop-macos-release
           path: apps/desktop/release/*
