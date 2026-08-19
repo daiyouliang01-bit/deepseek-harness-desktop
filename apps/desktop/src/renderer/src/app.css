@@ -133,3 +133,47 @@ button.mini.danger {
   color: var(--error);
   border-color: rgba(247, 118, 142, 0.4);
 }
+
+button.menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button.menu-item:hover {
+  background: var(--accent);
+  color: #10101a;
+  filter: none;
+}
+
+/* GPT-desktop feel: quiet surfaces, soft borders, generous rounding. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 99px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: rgba(122, 162, 247, 0.5) !important;
+}
