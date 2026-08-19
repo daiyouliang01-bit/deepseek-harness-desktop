@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { SessionStore } from '@dshd/session-store'
 import { HarnessProcess } from '../runtime/harness-process'
@@ -17,6 +17,27 @@ function dshAvailable(): boolean {
   }
 }
 
+function linkIfExists(from: string, to: string): void {
+  if (!existsSync(from)) return
+  mkdirSync(dirname(to), { recursive: true })
+  try {
+    symlinkSync(from, to)
+  } catch {
+    /* already linked */
+  }
+}
+
+/** Isolated DSH_HOME so parallel dsh instances never share the task-board
+ *  single-instance ledger lock (~/.dsh/task-board). */
+function isolatedEnv(): Record<string, string> {
+  const home = mkdtempSync(join(tmpdir(), 'dshd-m2-home-'))
+  const realHome = process.env.DSH_HOME || join(homedir(), '.dsh')
+  linkIfExists(join(realHome, 'settings.yaml'), join(home, 'settings.yaml'))
+  linkIfExists(join(realHome, '.credentials.yaml'), join(home, '.credentials.yaml'))
+  linkIfExists(join(realHome, 'profiles', 'web'), join(home, 'profiles', 'web'))
+  return { DSH_HOME: home }
+}
+
 describe.skipIf(!dshAvailable())('SessionAdapter ↔ real dsh (M2)', () => {
   let hp: HarnessProcess
   let store: SessionStore
@@ -25,7 +46,7 @@ describe.skipIf(!dshAvailable())('SessionAdapter ↔ real dsh (M2)', () => {
 
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), 'dshd-m2-'))
-    hp = new HarnessProcess({ readyTimeoutMs: 60_000 })
+    hp = new HarnessProcess({ readyTimeoutMs: 60_000, env: isolatedEnv() })
     const info = await hp.start()
     store = new SessionStore({ path: join(dir, 'sessions.db') })
     adapter = new SessionAdapter({ client: new RpcClient({ baseUrl: info.url }), store })

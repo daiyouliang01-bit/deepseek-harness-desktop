@@ -14,6 +14,12 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@dshd/coding-agent':
+        specifier: workspace:*
+        version: link:../../packages/coding-agent
+      '@dshd/harness-adapter':
+        specifier: workspace:*
+        version: link:../../packages/harness-adapter
       '@dshd/permissions':
         specifier: workspace:*
         version: link:../../packages/permissions
@@ -84,6 +90,28 @@ importers:
       vite:
         specifier: ^8.2.1
         version: 8.2.1(@types/node@26.2.0)(jiti@2.7.0)
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@26.2.0)(vite@8.2.1(@types/node@26.2.0)(jiti@2.7.0))
+
+  packages/coding-agent:
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@26.2.0)(vite@8.2.1(@types/node@26.2.0)(jiti@2.7.0))
+
+  packages/harness-adapter:
+    dependencies:
+      '@dshd/coding-agent':
+        specifier: workspace:*
+        version: link:../coding-agent
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.2.0)(vite@8.2.1(@types/node@26.2.0)(jiti@2.7.0))

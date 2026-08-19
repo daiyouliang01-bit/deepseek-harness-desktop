@@ -56,6 +56,7 @@ export class HarnessProcess extends EventEmitter<HarnessProcessEvents> {
       onSpawned: options.onSpawned ?? (() => undefined),
       onReady: options.onReady ?? (() => undefined),
       onStopped: options.onStopped ?? (() => undefined),
+      env: options.env ?? {},
       port: options.port,
       autoRestart: options.autoRestart ?? false,
       maxRestartAttempts: options.maxRestartAttempts ?? DEFAULT_MAX_RESTART_ATTEMPTS,
@@ -103,7 +104,7 @@ export class HarnessProcess extends EventEmitter<HarnessProcessEvents> {
     // hard-coding 3080. Falls back to 0 (unknown) for the --port 0 path.
     const portIdx = portArgs.indexOf('--port')
     const boundPort = portIdx >= 0 ? Number(portArgs[portIdx + 1]) : 0
-    const childEnv = { ...process.env, DSH_APP_PORT: String(boundPort) }
+    const childEnv = { ...process.env, ...this.options.env, DSH_APP_PORT: String(boundPort) }
 
     // R3: detached:true gives the child its own process group so killTree can
     // kill the WHOLE tree via kill(-pid); without it kill(-pid) throws ESRCH

@@ -49,6 +49,13 @@ export interface HarnessProcessOptions {
   healthProbeIntervalMs?: number
   /** Callback sink for captured stdout/stderr lines (for logs). */
   onOutput?: (stream: 'stdout' | 'stderr', line: string) => void
+  /**
+   * Extra environment variables merged into the spawned dsh's env (after
+   * process.env). Tests use this to give each instance its own DSH_HOME so
+   * parallel dsh processes never share the task-board ledger lock
+   * (~/.dsh/task-board/ledger-v2.lock, single-instance by design).
+   */
+  env?: Record<string, string>
   /** Default: '--host 127.0.0.1 --port 0' (OS-assigned free port, ADR-007). */
   defaultArgs?: string[]
   /**

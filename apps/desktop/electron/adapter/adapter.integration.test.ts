@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { afterAll, describe, expect, it } from 'vitest'
 import { HarnessProcess } from '../runtime/harness-process'
 import { RpcClient } from './rpc-client'
 
@@ -12,6 +15,32 @@ function dshAvailable(): boolean {
   }
 }
 
+function linkIfExists(from: string, to: string): void {
+  if (!existsSync(from)) return
+  mkdirSync(dirname(to), { recursive: true })
+  try {
+    symlinkSync(from, to)
+  } catch {
+    /* already linked */
+  }
+}
+
+/**
+ * Isolate this dsh instance behind its own DSH_HOME so parallel tests never
+ * share the task-board single-instance ledger lock (~/.dsh/task-board).
+ */
+function isolatedEnv(): Record<string, string> {
+  const home = mkdtempSync(join(tmpdir(), 'dshd-adapter-home-'))
+  const realHome = process.env.DSH_HOME || join(homedir(), '.dsh')
+  linkIfExists(join(realHome, 'settings.yaml'), join(home, 'settings.yaml'))
+  linkIfExists(join(realHome, '.credentials.yaml'), join(home, '.credentials.yaml'))
+  linkIfExists(join(realHome, 'profiles', 'web'), join(home, 'profiles', 'web'))
+  return { DSH_HOME: home }
+}
+
+const isolated = isolatedEnv()
+afterAll(() => {})
+
 /**
  * M1 live contract test: spawn the real dsh, open the mux SSE stream over
  * plain fetch, and assert the official wire contract (server-request
@@ -20,7 +49,7 @@ function dshAvailable(): boolean {
  */
 describe.skipIf(!dshAvailable())('adapter ↔ real dsh (M1 contract)', () => {
   it('session.list unary works over the wire', async () => {
-    const hp = new HarnessProcess({ readyTimeoutMs: 60_000 })
+    const hp = new HarnessProcess({ readyTimeoutMs: 60_000, env: isolated })
     try {
       const info = await hp.start()
       const client = new RpcClient({ baseUrl: info.url })
@@ -32,7 +61,7 @@ describe.skipIf(!dshAvailable())('adapter ↔ real dsh (M1 contract)', () => {
   }, 90_000)
 
   it('mux WebSocket stream yields subscribed baseline after session.create', async () => {
-    const hp = new HarnessProcess({ readyTimeoutMs: 60_000 })
+    const hp = new HarnessProcess({ readyTimeoutMs: 60_000, env: isolated })
     try {
       const info = await hp.start()
       const client = new RpcClient({ baseUrl: info.url })
