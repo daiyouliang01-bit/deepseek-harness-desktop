@@ -1,5 +1,5 @@
 import type { Tokens } from '@dshd/ui'
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { RuntimeStatus } from '@electron/runtime/runtime-types'
 import type { UpdateState } from '@electron/updater/update-manager'
 
@@ -74,68 +74,6 @@ function DesktopSection({ tokens }: { tokens: Tokens }): React.JSX.Element {
   )
 }
 
-/** 已归档会话 — 仅恢复（官方无 session.delete，不做永久删除）。 */
-function ArchivedSection({ tokens }: { tokens: Tokens }): React.JSX.Element {
-  const { colors, space, radius, font } = tokens
-  const [items, setItems] = useState<Array<{ sessionId: string; title?: string; updatedAt: number }> | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  const refresh = useCallback(() => {
-    void window.desktop.sessionListArchived().then((res) => {
-      if (res.ok && res.value) setItems(res.value)
-    })
-  }, [])
-  useEffect(() => refresh(), [refresh])
-
-  const onRestore = useCallback(
-    async (sessionId: string) => {
-      setBusy(true)
-      try {
-        await window.desktop.sessionUnarchive(sessionId)
-        refresh()
-      } finally {
-        setBusy(false)
-      }
-    },
-    [refresh]
-  )
-
-  return (
-    <section style={{ background: colors.surface, borderRadius: radius.md, padding: space.md, marginBottom: space.md }}>
-      <h3 style={{ color: colors.text, fontSize: font.sizeLg, margin: `0 0 ${space.sm}px` }}>已归档会话</h3>
-      {items === null && <span style={{ color: colors.textMuted, fontSize: font.sizeSm }}>…</span>}
-      {items !== null && items.length === 0 && (
-        <p style={{ color: colors.textMuted, fontSize: font.sizeSm, margin: 0 }}>没有已归档的会话。</p>
-      )}
-      {items?.map((s) => (
-        <div
-          key={s.sessionId}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: space.sm,
-            padding: `${space.sm}px 0`,
-            borderBottom: `1px solid ${colors.border}`
-          }}
-        >
-          <div style={{ minWidth: 0, overflow: 'hidden' }}>
-            <div style={{ color: colors.text, fontSize: font.sizeMd, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-              {s.title || s.sessionId.slice(0, 8)}
-            </div>
-            <div style={{ color: colors.textMuted, fontSize: font.sizeSm }}>
-              {new Date(s.updatedAt).toLocaleString()}
-            </div>
-          </div>
-          <button onClick={() => void onRestore(s.sessionId)} disabled={busy} className="mini">
-            恢复
-          </button>
-        </div>
-      ))}
-    </section>
-  )
-}
-
 /**
  * Task 3.1 settings panel. Runtime controls + model/provider placeholders.
  * API key entry is intentionally NOT in the renderer (safeStorage lives in
@@ -204,7 +142,6 @@ export function SettingsPanel({
 
       <UpdateSection tokens={tokens} />
       <DesktopSection tokens={tokens} />
-      <ArchivedSection tokens={tokens} />
 
       <section style={{ background: colors.surface, borderRadius: radius.md, padding: space.md }}>
         <h3 style={{ color: colors.text, fontSize: font.sizeLg, margin: `0 0 ${space.sm}px` }}>Official Web UI</h3>

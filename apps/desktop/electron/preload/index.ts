@@ -81,8 +81,6 @@ const api = {
     ipcRenderer.invoke('sessions:rename', sessionId, title),
   sessionSearch: (query: string): Promise<SessionOpResult<SessionSearchResult[]>> => ipcRenderer.invoke('sessions:search', query),
   sessionArchive: (sessionId: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('sessions:archive', sessionId),
-  sessionListArchived: (): Promise<SessionOpResult<SessionSummary[]>> => ipcRenderer.invoke('sessions:list-archived'),
-  sessionUnarchive: (sessionId: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('sessions:unarchive', sessionId),
 
   // agent stream (M3)
   agentSend: (

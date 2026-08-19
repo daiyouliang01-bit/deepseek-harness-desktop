@@ -115,31 +115,6 @@ describe('session store (file-backed)', () => {
     expect(proj.rootPath).toBe('/tmp/demo')
     store.close()
   })
-
-  it('listArchived returns only archived conversations, newest first', () => {
-    const store = new SessionStore({ path })
-    const a = store.createConversation('archived-a')
-    const b = store.createConversation('archived-b')
-    const live = store.createConversation('live')
-    store.setArchived(a.id, true)
-    store.setArchived(b.id, true)
-    const archived = store.listArchived()
-    expect(archived.map((c) => c.id)).toEqual(expect.arrayContaining([a.id, b.id]))
-    expect(archived.map((c) => c.id)).not.toContain(live.id)
-    expect(archived.every((c) => c.archived === true)).toBe(true)
-    store.close()
-  })
-
-  it('unarchive brings a session back to the live list', () => {
-    const store = new SessionStore({ path })
-    const conv = store.createConversation('restore me')
-    store.setArchived(conv.id, true)
-    expect(store.listArchived().map((c) => c.id)).toContain(conv.id)
-    store.setArchived(conv.id, false)
-    expect(store.listArchived().map((c) => c.id)).not.toContain(conv.id)
-    expect(store.listConversations().map((c) => c.id)).toContain(conv.id)
-    store.close()
-  })
 })
 
 describe('session store (in-memory)', () => {

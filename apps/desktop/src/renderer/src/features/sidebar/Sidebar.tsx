@@ -18,94 +18,78 @@ const NAV: Array<{ view: ShellView; label: string; icon: string }> = [
   { view: 'settings', label: 'Settings', icon: '⚙️' }
 ]
 
-/**
- * Claude-style narrow icon rail (64px). Labels move to `title` tooltips; the
- * chat list lives in its own column (ConversationList), not inside this rail.
- */
 export function Sidebar({ tokens, view, onNavigate, runtimeState, updateBadge }: SidebarProps): React.JSX.Element {
-  const { colors, space, radius } = tokens
+  const { colors, space, radius, font } = tokens
   return (
     <nav
       style={{
-        width: 64,
+        width: 220,
         flexShrink: 0,
         background: colors.surface,
         borderRight: `1px solid ${colors.border}`,
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center',
-        padding: `${space.md}px ${space.xs}px`
+        padding: space.md
       }}
     >
-      <div
-        style={{
-          fontWeight: 700,
-          fontSize: 18,
-          marginBottom: space.lg,
-          color: colors.text,
-          userSelect: 'none'
-        }}
-        title="DeepSeek Harness"
-      >
-        ⌘
+      <div style={{ fontWeight: 700, fontSize: font.sizeLg, marginBottom: space.lg, color: colors.text }}>
+        DeepSeek Harness
       </div>
       {NAV.map((item) => (
         <button
           key={item.view}
           onClick={() => onNavigate(item.view)}
-          title={item.label}
-          aria-label={item.label}
           style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            width: 44,
-            height: 44,
+            gap: space.sm,
+            padding: `${space.sm}px ${space.md}px`,
             marginBottom: space.xs,
             border: 0,
-            borderRadius: radius.md,
+            borderRadius: radius.sm,
             cursor: 'pointer',
-            fontSize: 20,
+            fontSize: font.sizeMd,
+            textAlign: 'left',
             background: view === item.view ? colors.surfaceAlt : 'transparent',
-            color: view === item.view ? colors.accent : colors.textMuted,
-            position: 'relative'
+            color: view === item.view ? colors.accent : colors.textMuted
           }}
         >
           <span>{item.icon}</span>
+          {item.label}
           {updateBadge && item.view === 'settings' && (
             <span
               style={{
-                position: 'absolute',
-                top: 8,
-                right: 8,
-                width: 8,
-                height: 8,
+                marginLeft: 'auto',
+                background: colors.danger,
+                color: '#fff',
                 borderRadius: 99,
-                background: colors.danger
+                minWidth: 16,
+                height: 16,
+                padding: '0 4px',
+                fontSize: 10,
+                lineHeight: '16px',
+                textAlign: 'center'
               }}
               title="更新已下载，重启以安装"
-            />
+            >
+              ●
+            </span>
           )}
         </button>
       ))}
-      <div
-        style={{
-          marginTop: 'auto',
-          fontSize: 10,
-          color: colors.textMuted,
-          textAlign: 'center'
-        }}
-        title={`runtime: ${runtimeState}`}
-      >
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: 99,
-            background: runtimeState === 'ready' ? colors.success : colors.warn,
-            display: 'inline-block'
-          }}
-        />
+      <div style={{ marginTop: 'auto', fontSize: font.sizeSm, color: colors.textMuted }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: space.xs }}>
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 99,
+              background: runtimeState === 'ready' ? colors.success : colors.warn,
+              display: 'inline-block'
+            }}
+          />
+          runtime: {runtimeState}
+        </div>
       </div>
     </nav>
   )

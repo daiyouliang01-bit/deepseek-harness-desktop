@@ -2,7 +2,7 @@ import { darkTokens } from '@dshd/ui'
 import { useEffect, useState } from 'react'
 import type { RuntimeStatus } from '@electron/runtime/runtime-types'
 import { ChatView } from '../chat/ChatView'
-import { ConversationList } from '../conversations/ConversationList'
+import { ConversationsPanel } from '../conversations/ConversationsPanel'
 import { Onboarding } from '../onboarding/Onboarding'
 import { PhonePanel } from '../phone/PhonePanel'
 import { ProjectsPanel } from '../projects/ProjectsPanel'
@@ -107,11 +107,13 @@ export function AppShell({
           </div>
         )}
         {view === 'conversations' && (
-          <div style={{ display: 'flex', height: '100%', width: '100%' }}>
-            <ConversationList tokens={tokens} activeSessionId={activeSessionId} onSelect={setActiveSessionId} />
-            <main style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: tokens.space.lg }}>
+          <div style={{ display: 'flex', gap: tokens.space.lg }}>
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <ConversationsPanel tokens={tokens} activeSessionId={activeSessionId} onSelect={setActiveSessionId} />
+            </div>
+            <div style={{ flex: 2 }}>
               <ChatView tokens={tokens} activeSessionId={activeSessionId} />
-            </main>
+            </div>
           </div>
         )}
         {view === 'projects' && <ProjectsPanel tokens={tokens} />}

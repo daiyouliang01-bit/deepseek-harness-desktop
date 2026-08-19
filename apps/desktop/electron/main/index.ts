@@ -346,9 +346,6 @@ function stopStreamBridge(): void {
 
 let uiLoaded = false // whether the official Web UI is currently loaded
 let shellRequested = false // user asked for the custom shell view
-// Test/verification hook: start directly in the custom shell and never swap
-// to the official Web UI on ready (used by e2e / screenshot scripts).
-const forceShell = process.env['DSH_FORCE_SHELL'] === '1'
 
 function pushStatus(): void {
   mainWindow?.webContents.send('runtime:status', runtime.getStatus())
@@ -561,20 +558,6 @@ function createWindow(): void {
   })
 
   loadRendererScreen()
-
-  // DSH_FORCE_SHELL=1 (e2e / screenshot verification): stay in the custom
-  // shell — mark it requested before the runtime can swap in the official UI.
-  if (forceShell) {
-    shellRequested = true
-    uiLoaded = false
-    const win = mainWindow
-    if (win) {
-      win.webContents.once('did-finish-load', () => {
-        pushStatus()
-        win.webContents.send('ui:open-shell', 'conversations')
-      })
-    }
-  }
 }
 
 // --- IPC: narrow desktop contract (see docs/ipc-contract.md) ---
@@ -747,17 +730,6 @@ ipcMain.handle('sessions:archive', (_e, sessionId: string) => {
   const adapter = ensureSessionAdapter()
   if (!adapter) return { ok: false, error: 'runtime not ready' }
   adapter.archive(sessionId)
-  return { ok: true }
-})
-ipcMain.handle('sessions:list-archived', () => {
-  const adapter = ensureSessionAdapter()
-  if (!adapter) return { ok: false, error: 'runtime not ready' }
-  return { ok: true, value: adapter.listArchived() }
-})
-ipcMain.handle('sessions:unarchive', (_e, sessionId: string) => {
-  const adapter = ensureSessionAdapter()
-  if (!adapter) return { ok: false, error: 'runtime not ready' }
-  adapter.unarchive(String(sessionId))
   return { ok: true }
 })
 

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent } from '@dshd/protocol'
 import { decodeEventObject } from '@dshd/protocol'
-import { finishTurnActivity, initialState, reduceEvents, resolveApproval, resolveQuestion } from './event-reducer'
+import { initialState, reduceEvents, resolveApproval, resolveQuestion } from './event-reducer'
 
 const FIXTURES_DIR = join(__dirname, '../../../../../../../tests/fixtures/events')
 
@@ -124,37 +124,6 @@ describe('event reducer — invariants', () => {
     ])
     expect(state.taskPhase).toBe('working')
     expect(state.verifyOk).toBe(false)
-  })
-
-  it('collapses tool calls into aggregated activity steps and change paths', () => {
-    let s = reduceEvents(initialState, [
-      { type: 'message', id: 'u1', role: 'user', content: 'fix it', ts: 1 },
-      { type: 'tool-call', id: 't1', callId: 'c1', name: 'read', args: { path: 'a.ts' } },
-      { type: 'tool-result', id: 'r1', callId: 'c1', ok: true, output: '' },
-      { type: 'tool-call', id: 't2', callId: 'c2', name: 'read', args: { path: 'b.ts' } },
-      { type: 'tool-result', id: 'r2', callId: 'c2', ok: true, output: '' },
-      { type: 'tool-call', id: 't3', callId: 'c3', name: 'write', args: { file_path: 'c.ts' } },
-      { type: 'tool-result', id: 'r3', callId: 'c3', ok: true, output: '' },
-    ])
-    s = finishTurnActivity(s)
-    expect(s.turnActivity?.steps).toEqual([
-      { label: 'read', status: 'done', count: 2 },
-      { label: 'write', status: 'done', count: 1 },
-    ])
-    expect(s.changes).toEqual([
-      { path: 'c.ts', kind: 'write' },
-    ])
-  })
-
-  it('failed tools mark the activity step failed and never become changes', () => {
-    let s = reduceEvents(initialState, [
-      { type: 'message', id: 'u1', role: 'user', content: 'x', ts: 1 },
-      { type: 'tool-call', id: 't1', callId: 'c1', name: 'edit', args: { file_path: 'd.ts' } },
-      { type: 'tool-result', id: 'r1', callId: 'c1', ok: false, output: 'boom' },
-    ])
-    s = finishTurnActivity(s)
-    expect(s.turnActivity?.steps[0]).toMatchObject({ label: 'edit', status: 'failed' })
-    expect(s.changes).toBeUndefined()
   })
 
   it('is pure: input state is not mutated', () => {

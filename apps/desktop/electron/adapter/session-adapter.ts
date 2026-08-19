@@ -60,24 +60,13 @@ export class SessionAdapter {
     return this.options.store
   }
 
-  /** List remote sessions, upsert into cache, return summaries (archived hidden). */
+  /** List remote sessions, upsert into cache, return summaries. */
   async list(): Promise<SessionSummary[]> {
     const res = await this.client.unary<{ items: SessionSummary[] }>('session.list', {})
     for (const item of res.items) {
       this.store.upsertConversation(item.sessionId, item.title ?? '', item.updatedAt)
     }
-    return res.items.filter((item) => !this.store.isArchived(item.sessionId))
-  }
-
-  /** Locally archived sessions, newest first (settings page). */
-  listArchived(): SessionSummary[] {
-    return this.store.listArchived().map((c) => ({
-      sessionId: c.id,
-      updatedAt: c.updatedAt,
-      running: false,
-      blank: false,
-      title: c.title || undefined,
-    }))
+    return res.items
   }
 
   /** Create a session (optionally pinned cwd). */

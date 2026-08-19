@@ -32,26 +32,6 @@ export interface ChatError {
   hint?: string
 }
 
-/** One aggregated step of an agent turn (tool calls folded by name). */
-export interface ActivityStep {
-  label: string
-  status: 'done' | 'running' | 'failed'
-  count: number
-}
-
-/** The single "Working · Ns" card state for the current turn. */
-export interface TurnActivity {
-  startedAt: number
-  steps: ActivityStep[]
-  phase: 'working' | 'verifying' | 'done'
-}
-
-/** A file the agent modified this turn (change card, no line stats). */
-export interface ChangeSummary {
-  path: string
-  kind: 'write' | 'edit' | 'str_replace_editor'
-}
-
 export interface ChatState {
   /** ordered conversation messages */
   messages: ChatMessage[]
@@ -65,10 +45,6 @@ export interface ChatState {
   taskPhase?: 'idle' | 'planning' | 'working' | 'verifying' | 'completed' | 'failed'
   /** last verify outcome */
   verifyOk?: boolean
-  /** aggregated activity for the current turn (tool calls folded) */
-  turnActivity?: TurnActivity
-  /** files the agent changed this turn */
-  changes?: ChangeSummary[]
 }
 
 export const initialState: ChatState = { messages: [], completions: {}, approvals: [], questions: [] }
@@ -236,48 +212,4 @@ export function resolveApproval(state: ChatState, approvalId: string): ChatState
 /** Resolve an answered question. */
 export function resolveQuestion(state: ChatState, questionId: string): ChatState {
   return { ...state, questions: state.questions.filter((q) => q.id !== questionId) }
-}
-
-const MUTATION_TOOLS = new Set(['write', 'edit', 'str_replace_editor'])
-
-function extractPath(args: unknown): string {
-  if (args && typeof args === 'object') {
-    const rec = args as Record<string, unknown>
-    if (typeof rec.path === 'string') return rec.path
-    if (typeof rec.file_path === 'string') return rec.file_path
-    if (typeof rec.filePath === 'string') return rec.filePath
-  }
-  return ''
-}
-
-/**
- * Fold the last assistant turn's raw tool calls into aggregated activity
- * steps and a change summary. Called when the turn ends (completion), so the
- * UI shows one "Working · 24s / ✓ Read 6 files / ● Running tests…" card
- * instead of a stream of tool logs.
- */
-export function finishTurnActivity(state: ChatState): ChatState {
-  const last = lastMessage(state)
-  if (!last || last.role !== 'assistant') return state
-  const byName = new Map<string, ActivityStep>()
-  const changes: ChangeSummary[] = []
-  for (const tc of last.toolCalls) {
-    const hit = byName.get(tc.name) ?? { label: tc.name, status: 'done' as const, count: 0 }
-    hit.count += 1
-    if (tc.status === 'running') hit.status = 'running'
-    else if (tc.status === 'failed') hit.status = 'failed'
-    byName.set(tc.name, hit)
-    if (tc.status === 'ok' && MUTATION_TOOLS.has(tc.name)) {
-      changes.push({ path: extractPath(tc.args), kind: tc.name as ChangeSummary['kind'] })
-    }
-  }
-  return {
-    ...state,
-    turnActivity: {
-      startedAt: last.ts,
-      steps: [...byName.values()],
-      phase: state.verifyOk === false ? 'done' : 'done',
-    },
-    changes: changes.length > 0 ? changes : state.changes,
-  }
 }

@@ -28,12 +28,6 @@ export class MessageStore {
   replay(events: AgentEvent[]): void {
     for (const e of events) this.dispatch(e)
   }
-
-  /** Adopt a computed state (e.g. turn activity folding) wholesale. */
-  setState(state: ChatState): void {
-    this.state = state
-    for (const l of this.listeners) l(this.state)
-  }
 }
 
 /** App-wide singleton for the current session. */
