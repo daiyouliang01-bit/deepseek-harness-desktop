@@ -140,6 +140,9 @@ const api = {
   phoneStatus: (): Promise<SessionOpResult<TunnelStatus>> => ipcRenderer.invoke('phone:get-status'),
   phoneStart: (): Promise<SessionOpResult<TunnelStatus>> => ipcRenderer.invoke('phone:start'),
   phoneStop: (): Promise<SessionOpResult<TunnelStatus>> => ipcRenderer.invoke('phone:stop'),
+  // data-directory settings (multi-instance isolation)
+  dshHomeGet: (): Promise<{ ok: boolean; value?: string; default?: string; error?: string }> => ipcRenderer.invoke('settings:get-dsh-home'),
+  dshHomeSet: (value: string): Promise<{ ok: boolean; value?: string; restartRequired?: boolean; error?: string }> => ipcRenderer.invoke('settings:set-dsh-home', value),
   // PIN gate (Task 7.3)
   pinHas: (): Promise<{ ok: boolean; value?: boolean; error?: string }> => ipcRenderer.invoke('pin:has'),
   pinSet: (pin: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('pin:set', pin),

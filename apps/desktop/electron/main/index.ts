@@ -248,6 +248,26 @@ const ledger = new LedgerIntegration({
 // Phase 2.1: preferred fixed port (override with DSH_DESKTOP_PORT env).
 const PREFERRED_PORT = Number(process.env['DSH_DESKTOP_PORT'] ?? '') || 35880
 
+/**
+ * Resolve the dsh data directory for the desktop shell. Defaults to the
+ * standard `~/.dsh` (shared with `dsh web` / the 3080 GUI), but can be
+ * pointed at a dedicated directory via the settings page (userData/config/
+ * settings.json → dshHome) so a second GUI instance never writes the same
+ * session logs as the first — the multi-instance seq-gap corruption fix.
+ */
+function resolveDshHome(): string {
+  try {
+    const configured = readFileSync(join(app.getPath('userData'), 'config', 'settings.json'), 'utf8')
+    const parsed = JSON.parse(configured) as { dshHome?: unknown }
+    if (typeof parsed.dshHome === 'string' && parsed.dshHome.trim() !== '') return parsed.dshHome.trim()
+  } catch {
+    /* missing/corrupt settings → default */
+  }
+  return process.env['DSH_HOME'] || join(homedir(), '.dsh')
+}
+
+const DESKTOP_DSH_HOME = resolveDshHome()
+
 // PIN gate: loopback reverse proxy in front of dsh web, exposed via the
 // tunnel so phones must enter a PIN before reaching the harness.
 // Override the gate port with DSH_PIN_GATE_PORT; the upstream port is derived
@@ -261,7 +281,7 @@ let pinGate: PinGate | null = null
 // (0600) so app restarts keep the same value; gate and plugin both rely on
 // this single source of truth.
 const COMPANION_TOKEN_FILE = (() => {
-  const dshHome = process.env['DSH_HOME'] || join(homedir(), '.dsh')
+  const dshHome = DESKTOP_DSH_HOME
   return join(dshHome, 'companion', 'token')
 })()
 
@@ -304,6 +324,9 @@ const runtime = new HarnessProcess({
   extraArgs: TRUSTED_HOSTS.length > 0 ? TRUSTED_HOSTS.flatMap((h) => ['--trusted-host', h]) : [],
   port: PREFERRED_PORT,
   autoRestart: true,
+  // Dedicated data directory when configured: the child dsh must read/write
+  // the same DSH_HOME the desktop shell resolves (session-log isolation).
+  env: { DSH_HOME: DESKTOP_DSH_HOME },
   onOutput: logLine,
   onSpawned: (pid, startedAt) => ledger.recordSpawned(pid, startedAt),
   onReady: (info) => ledger.recordReady(info),
@@ -416,7 +439,7 @@ async function startRuntime(): Promise<RuntimeStatus> {
 
     // Task 7.2: link the bundled phone-sync plugin into the web profile so the
     // spawned dsh can load it (idempotent; failure only disables phone access).
-    const dshHome = process.env['DSH_HOME'] || join(require('node:os').homedir(), '.dsh')
+    const dshHome = DESKTOP_DSH_HOME
     const linked = ensurePhoneSyncLinked(dshHome, join(__dirname, '../..'))
     if (linked) {
       logLine('stdout', `[phone-sync] linked ${linked}`)
@@ -852,6 +875,24 @@ ipcMain.handle('crash-evidence:get', () => {
     evidence: prev
       ? { startedAt: prev.startedAt, appVersion: prev.appVersion }
       : null
+  }
+})
+
+// --- data-directory settings (multi-instance isolation) ---
+ipcMain.handle('settings:get-dsh-home', () => ({ ok: true, value: DESKTOP_DSH_HOME, default: join(homedir(), '.dsh') }))
+ipcMain.handle('settings:set-dsh-home', (_e, value: string) => {
+  const next = typeof value === 'string' ? value.trim() : ''
+  if (next !== '' && !next.startsWith('/')) return { ok: false, error: '必须是绝对路径' }
+  try {
+    mkdirSync(join(app.getPath('userData'), 'config'), { recursive: true })
+    const file = join(app.getPath('userData'), 'config', 'settings.json')
+    const current = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+    if (next === '') delete current.dshHome
+    else current.dshHome = next
+    writeFileSync(file, JSON.stringify(current, null, 2), 'utf8')
+    return { ok: true, value: next, restartRequired: next !== DESKTOP_DSH_HOME }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 })
 

@@ -1,5 +1,5 @@
 import type { Tokens } from '@dshd/ui'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { RuntimeStatus } from '@electron/runtime/runtime-types'
 import type { UpdateState } from '@electron/updater/update-manager'
 
@@ -74,6 +74,78 @@ function DesktopSection({ tokens }: { tokens: Tokens }): React.JSX.Element {
   )
 }
 
+/** 数据目录 — 多实例隔离：与 Web GUI(3080) 分开数据避免会话日志互相写坏。 */
+function DataDirSection({ tokens }: { tokens: Tokens }): React.JSX.Element {
+  const { colors, space, radius, font } = tokens
+  const [current, setCurrent] = useState<string | null>(null)
+  const [defaultHome, setDefaultHome] = useState<string | undefined>(undefined)
+  const [draft, setDraft] = useState('')
+  const [msg, setMsg] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    void window.desktop.dshHomeGet().then((res) => {
+      if (res.ok && res.value) {
+        setCurrent(res.value)
+        setDraft(res.value)
+        setDefaultHome(res.default)
+      }
+    })
+  }, [])
+
+  const save = useCallback(async () => {
+    setBusy(true)
+    setMsg(null)
+    try {
+      const res = await window.desktop.dshHomeSet(draft.trim())
+      if (res.ok) {
+        setCurrent(res.value ?? draft.trim())
+        setMsg(res.restartRequired ? `已保存 — 重启桌面壳后生效（当前数据目录：${res.value}）` : '已保存')
+      } else {
+        setMsg(res.error ?? '保存失败')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }, [draft])
+
+  return (
+    <section style={{ background: colors.surface, borderRadius: radius.md, padding: space.md, marginBottom: space.md }}>
+      <h3 style={{ color: colors.text, fontSize: font.sizeLg, margin: `0 0 ${space.sm}px` }}>数据目录</h3>
+      <p style={{ color: colors.textMuted, fontSize: font.sizeSm, margin: `0 0 ${space.sm}px`, lineHeight: 1.6 }}>
+        当前：<code style={{ fontFamily: font.mono, color: colors.text }}>{current ?? '…'}</code>
+        {defaultHome && current !== defaultHome && (
+          <span style={{ display: 'block', marginTop: 4 }}>默认（共享 Web GUI）：{defaultHome}</span>
+        )}
+        {current === defaultHome && (
+          <span style={{ display: 'block', marginTop: 4 }}>与 Web GUI（3080）共享同一数据目录。同时运行两个实例会互相写坏会话日志（历史打不开）。</span>
+        )}
+      </p>
+      <div style={{ display: 'flex', gap: space.sm }}>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="/Users/you/.dsh-desktop（独立目录）"
+          style={{
+            flex: 1,
+            padding: `${space.sm}px ${space.md}px`,
+            borderRadius: radius.sm,
+            background: colors.surfaceAlt,
+            color: colors.text,
+            border: `1px solid ${colors.border}`,
+            fontSize: font.sizeMd,
+            fontFamily: font.mono
+          }}
+        />
+        <button onClick={() => void save()} disabled={busy || draft.trim() === current}>
+          {busy ? '保存中…' : '保存'}
+        </button>
+      </div>
+      {msg && <p style={{ color: msg.startsWith('已保存') ? colors.success : colors.danger, fontSize: font.sizeSm, margin: `${space.sm}px 0 0` }}>{msg}</p>}
+    </section>
+  )
+}
+
 /**
  * Task 3.1 settings panel. Runtime controls + model/provider placeholders.
  * API key entry is intentionally NOT in the renderer (safeStorage lives in
@@ -142,6 +214,7 @@ export function SettingsPanel({
 
       <UpdateSection tokens={tokens} />
       <DesktopSection tokens={tokens} />
+      <DataDirSection tokens={tokens} />
 
       <section style={{ background: colors.surface, borderRadius: radius.md, padding: space.md }}>
         <h3 style={{ color: colors.text, fontSize: font.sizeLg, margin: `0 0 ${space.sm}px` }}>Official Web UI</h3>
