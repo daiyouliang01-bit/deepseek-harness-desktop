@@ -129,12 +129,12 @@ describe('event reducer — invariants', () => {
   it('collapses tool calls into aggregated activity steps and change paths', () => {
     let s = reduceEvents(initialState, [
       { type: 'message', id: 'u1', role: 'user', content: 'fix it', ts: 1 },
-      { type: 'tool-call', id: 't1', callId: 'c1', name: 'read', args: { path: 'a.ts' }, ts: 2 },
-      { type: 'tool-result', id: 'r1', callId: 'c1', name: 'read', ok: true, output: '', ts: 3 },
-      { type: 'tool-call', id: 't2', callId: 'c2', name: 'read', args: { path: 'b.ts' }, ts: 4 },
-      { type: 'tool-result', id: 'r2', callId: 'c2', name: 'read', ok: true, output: '', ts: 5 },
-      { type: 'tool-call', id: 't3', callId: 'c3', name: 'write', args: { file_path: 'c.ts' }, ts: 6 },
-      { type: 'tool-result', id: 'r3', callId: 'c3', name: 'write', ok: true, output: '', ts: 7 },
+      { type: 'tool-call', id: 't1', callId: 'c1', name: 'read', args: { path: 'a.ts' } },
+      { type: 'tool-result', id: 'r1', callId: 'c1', ok: true, output: '' },
+      { type: 'tool-call', id: 't2', callId: 'c2', name: 'read', args: { path: 'b.ts' } },
+      { type: 'tool-result', id: 'r2', callId: 'c2', ok: true, output: '' },
+      { type: 'tool-call', id: 't3', callId: 'c3', name: 'write', args: { file_path: 'c.ts' } },
+      { type: 'tool-result', id: 'r3', callId: 'c3', ok: true, output: '' },
     ])
     s = finishTurnActivity(s)
     expect(s.turnActivity?.steps).toEqual([
@@ -149,8 +149,8 @@ describe('event reducer — invariants', () => {
   it('failed tools mark the activity step failed and never become changes', () => {
     let s = reduceEvents(initialState, [
       { type: 'message', id: 'u1', role: 'user', content: 'x', ts: 1 },
-      { type: 'tool-call', id: 't1', callId: 'c1', name: 'edit', args: { file_path: 'd.ts' }, ts: 2 },
-      { type: 'tool-result', id: 'r1', callId: 'c1', name: 'edit', ok: false, output: 'boom', ts: 3 },
+      { type: 'tool-call', id: 't1', callId: 'c1', name: 'edit', args: { file_path: 'd.ts' } },
+      { type: 'tool-result', id: 'r1', callId: 'c1', ok: false, output: 'boom' },
     ])
     s = finishTurnActivity(s)
     expect(s.turnActivity?.steps[0]).toMatchObject({ label: 'edit', status: 'failed' })

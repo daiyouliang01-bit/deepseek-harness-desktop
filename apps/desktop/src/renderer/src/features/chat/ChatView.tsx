@@ -2,9 +2,11 @@ import type { Tokens } from '@dshd/ui'
 import { useCallback, useEffect, useState } from 'react'
 import type { AgentEvent } from '@dshd/protocol'
 import { messageStore } from './message-store'
-import type { ChatMessage, ChatState, ToolCallState } from './event-reducer'
+import { finishTurnActivity, type ChatMessage, type ChatState, type ToolCallState } from './event-reducer'
 import { ImageAttachments, type PendingImage } from './ImageAttachments'
 import { MarkdownContent } from './MarkdownContent'
+import { ActivityCard } from './ActivityCard'
+import { ChangeCard } from './ChangeCard'
 import type { SessionOpResult } from '@electron/preload'
 
 interface ChatViewProps {
@@ -383,21 +385,37 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
   const canSend = (input.trim().length > 0 || pendingImages.some((im) => im.status === 'queued')) && activeSessionId !== null
   const queuedCount = pendingImages.filter((im) => im.status === 'queued').length
 
+  // Collapse the finished turn into activity/changes once streaming stops.
+  useEffect(() => {
+    if (!streamRunning && state.messages.length > 0) {
+      messageStore.setState(finishTurnActivity(messageStore.getState()))
+    }
+  }, [streamRunning, state.messages.length])
+
+  const taskLabel = state.taskPhase === 'completed' ? '✓ Verified'
+    : state.taskPhase === 'failed' ? '✗ Failed'
+      : state.taskPhase === 'verifying' ? '◐ Verifying'
+        : state.taskPhase === 'working' ? '● Working'
+          : state.taskPhase === 'planning' ? '● Planning…'
+            : null
+
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: space.md }}>
-        <h2 style={{ color: colors.text, fontSize: 22, margin: 0 }}>Chat</h2>
-        <span style={{ color: streamRunning ? colors.success : colors.textMuted, fontSize: font.sizeSm }}>
-          {streamRunning ? '● live stream' : '○ stream offline'}
-        </span>
-      </div>
-      {(state.taskPhase || state.verifyOk !== undefined) && (
-        <div style={{ color: colors.textMuted, fontSize: font.sizeSm, marginBottom: space.sm }}>
-          {state.taskPhase ? `task: ${state.taskPhase}` : ''}
-          {state.taskPhase && state.verifyOk !== undefined ? ' · ' : ''}
-          {state.verifyOk !== undefined ? `verify: ${state.verifyOk ? 'ok' : 'failed'}` : ''}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: space.md, paddingBottom: space.sm, borderBottom: `1px solid ${colors.border}` }}>
+        <h2 style={{ color: colors.text, fontSize: font.sizeLg, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {activeSessionId ? '会话' : 'Chat'}
+        </h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: space.md }}>
+          {taskLabel && (
+            <span style={{ color: state.taskPhase === 'failed' ? colors.danger : state.taskPhase === 'completed' ? colors.success : colors.warn, fontSize: font.sizeSm, fontWeight: 600 }}>
+              {taskLabel}
+            </span>
+          )}
+          <span style={{ color: streamRunning ? colors.success : colors.textMuted, fontSize: font.sizeSm }}>
+            {streamRunning ? '● live' : ''}
+          </span>
         </div>
-      )}
+      </div>
 
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: space.md }}>
         {state.messages.length === 0 && (
@@ -408,6 +426,30 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
         {state.messages.map((m) => (
           <MessageRow key={m.id + m.ts} msg={m} tokens={tokens} sessionId={activeSessionId} />
         ))}
+        {state.turnActivity && !streamRunning && <ActivityCard activity={state.turnActivity} tokens={tokens} />}
+        {state.changes && state.changes.length > 0 && !streamRunning && <ChangeCard changes={state.changes} tokens={tokens} />}
+        {state.verifyOk !== undefined && !streamRunning && (
+          <div
+            style={{
+              background: colors.surface,
+              border: `1px solid ${colors.border}`,
+              borderRadius: radius.lg,
+              padding: `${space.md}px`,
+              marginBottom: space.md,
+              maxWidth: 520,
+              display: 'flex',
+              alignItems: 'center',
+              gap: space.sm
+            }}
+          >
+            <span style={{ color: state.verifyOk ? colors.success : colors.danger, fontSize: 14 }}>
+              {state.verifyOk ? '✓' : '✗'}
+            </span>
+            <span style={{ color: colors.text, fontSize: font.sizeMd, fontWeight: 600 }}>
+              Verification {state.verifyOk ? 'passed' : 'failed'}
+            </span>
+          </div>
+        )}
         {state.approvals.map((a) => (
           <ApprovalCard
             key={a.id}
@@ -434,40 +476,65 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
           onClear={() => setPendingImages([])}
           disabled={activeSessionId === null}
         />
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              void onSend()
-            }
-          }}
-          placeholder={activeSessionId ? 'Message (Enter to send, Shift+Enter for newline)…' : 'Select a conversation first'}
-          rows={3}
-          disabled={activeSessionId === null}
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            resize: 'vertical',
-            background: colors.surfaceAlt,
-            color: colors.text,
-            border: `1px solid ${colors.border}`,
-            borderRadius: radius.sm,
-            padding: `${space.sm}px ${space.md}px`,
-            fontFamily: 'inherit',
-            fontSize: font.sizeMd
-          }}
-        />
-        <div style={{ display: 'flex', gap: space.sm, marginTop: space.sm }}>
-          <button onClick={() => void onSend()} disabled={!canSend}>
-            {pendingImages.some((im) => im.status === 'sending') ? 'Sending…' : queuedCount > 0 ? `Send (文 + ${queuedCount} 图)` : 'Send'}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: space.sm }}>
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                void onSend()
+              }
+            }}
+            placeholder={activeSessionId ? 'Ask DeepSeek Harness…' : 'Select a conversation first'}
+            rows={2}
+            disabled={activeSessionId === null}
+            style={{
+              flex: 1,
+              boxSizing: 'border-box',
+              resize: 'vertical',
+              background: colors.surfaceAlt,
+              color: colors.text,
+              border: `1px solid ${colors.border}`,
+              borderRadius: radius.md,
+              padding: `${space.md}px ${space.md}px`,
+              fontFamily: 'inherit',
+              fontSize: font.sizeMd,
+              outline: 'none'
+            }}
+          />
+          <button
+            onClick={() => void onSend()}
+            disabled={!canSend}
+            style={{
+              height: 44,
+              minWidth: 44,
+              borderRadius: radius.md,
+              border: 0,
+              background: colors.accent,
+              color: colors.accentText,
+              fontSize: 18,
+              cursor: canSend ? 'pointer' : 'not-allowed',
+              opacity: canSend ? 1 : 0.4
+            }}
+            title="Send"
+          >
+            ↑
           </button>
-          {streamRunning && (
-            <button className="ghost" onClick={() => void onCancel()}>
-              Cancel
-            </button>
-          )}
+        </div>
+        <div style={{ display: 'flex', gap: space.sm, marginTop: space.sm, alignItems: 'center' }}>
+          <span style={{ color: colors.textMuted, fontSize: font.sizeSm }}>
+            {queuedCount > 0 ? `📎 ${queuedCount} 张图片` : '＋ 文件 / 图片'}
+          </span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: space.sm }}>
+            <span style={{ color: colors.textMuted, fontSize: font.sizeSm }}>DeepSeek V3.2</span>
+            <span style={{ color: colors.textMuted, fontSize: font.sizeSm }}>Auto</span>
+            {streamRunning && (
+              <button className="ghost" onClick={() => void onCancel()} style={{ color: colors.danger, cursor: 'pointer' }}>
+                Cancel
+              </button>
+            )}
+          </span>
         </div>
       </div>
     </div>
