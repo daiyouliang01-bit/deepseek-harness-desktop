@@ -63,6 +63,43 @@ test('phone-settings host half is a no-op plugin', async () => {
   mod.default.apply()
 })
 
+test('coding-agent plugin ships a bundled process-bridge', async () => {
+  const file = join(root, 'dsh-coding-agent/lib/process-bridge.js')
+  const src = readFileSync(file, 'utf8')
+  assert.match(src, /prepareProjectContextMessage/)
+  assert.match(src, /SessionLoop/)
+  assert.doesNotMatch(src, /@deepseek-ai\//)
+})
+
+test('coding-agent host apply registers a pre-step listener and does not reject', async () => {
+  const mod = await import(`${pathToFileURL(join(root, 'dsh-coding-agent/lib/index.js')).href}?t=${Date.now()}`)
+  const seen = []
+  const plugin = mod.default
+  assert.deepEqual(plugin.inject, ['tools', 'agents'])
+  plugin.apply({
+    on(name) {
+      seen.push(name)
+      return () => {}
+    },
+  })
+  assert.ok(seen.includes('agent/pre-step'))
+  assert.ok(seen.includes('tools/result'))
+  assert.ok(seen.includes('turn/end'))
+})
+
+test('coding-agent host half is a no-op plugin and publishes no service', async () => {
+  const pkg = JSON.parse(readFileSync(join(root, 'dsh-coding-agent/package.json'), 'utf8'))
+  assert.equal(pkg.name, '@dshd/coding-agent-host')
+  const patch = readFileSync(join(root, 'dsh-coding-agent/cordis.patch.yml'), 'utf8')
+  assert.match(patch, /id: coding-agent/)
+  assert.doesNotMatch(patch, /id: permission/)
+  const mod = await import(pathToFileURL(join(root, 'dsh-coding-agent/lib/index.js')).href)
+  assert.equal(mod.default.name, 'coding-agent')
+  assert.equal(typeof mod.default.apply, 'function')
+  assert.deepEqual(mod.default.inject, ['tools', 'agents'])
+  mod.default.apply({ on() { return () => {} } })
+})
+
 test('community-links client registers 社区 settings + footer action', async () => {
   const registered = []
   const exported = await loadClient('@dshd/community-links', join(root, 'community-links/lib/client.js'))
@@ -126,4 +163,5 @@ test('main process no longer injects the jumping phone FAB', () => {
   assert.doesNotMatch(main, /dshd-phone-fab/)
   assert.match(main, /ensureCommunityLinksLinked/)
   assert.match(main, /ensurePhoneSettingsLinked/)
+  assert.match(main, /ensureCodingAgentLinked/)
 })

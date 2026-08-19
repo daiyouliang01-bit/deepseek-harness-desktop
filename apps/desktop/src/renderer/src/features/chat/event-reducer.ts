@@ -41,6 +41,10 @@ export interface ChatState {
   approvals: Array<{ id: string; permission: string; scope?: unknown; callId?: string }>
   /** pending interactive questions awaiting user answer */
   questions: Array<{ id: string; question: string; options?: Array<{ label: string; value: unknown }>; multiSelect?: boolean }>
+  /** last coding-agent task phase, if any */
+  taskPhase?: 'idle' | 'planning' | 'working' | 'verifying' | 'completed' | 'failed'
+  /** last verify outcome */
+  verifyOk?: boolean
 }
 
 export const initialState: ChatState = { messages: [], completions: {}, approvals: [], questions: [] }
@@ -172,6 +176,12 @@ export function reduceEvent(state: ChatState, event: AgentEvent): ChatState {
         ]
       }
     }
+
+    case 'task-updated':
+      return { ...state, taskPhase: event.phase }
+
+    case 'verify-finished':
+      return { ...state, verifyOk: event.ok }
 
     case 'completion': {
       const next = ensureAssistantTurn(state, event.id)

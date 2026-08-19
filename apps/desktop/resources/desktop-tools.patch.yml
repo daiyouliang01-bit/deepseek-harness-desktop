@@ -48,8 +48,21 @@
         description: Tools run automatically; file changes stay in the workspace
     defaultPreset: desktop-auto
 
+# Two `web` profile processes cannot both own the task-board ledger.
+# The GUI `dsh web` on :3080 already holds it; disable the board here so
+# the desktop harness can boot alongside and still load dsh-xai / SuperGrok.
+- id: web-ui-task-board
+  disabled: true
+
 # ── phone access (Task 7.2): Cloudflare quick tunnel + mobile view ──
 # @dshd/phone-sync must be linked into the web profile's node_modules
 # (the app does this automatically at startup via phone-sync-installer.ts).
 - id: phone-sync
   name: '@dshd/phone-sync'
+
+# Coding Agent host row. Must be an insert: overlay-by-id is a no-op when
+# the profile has never created this id (phone-sync is inserted in the
+# profile patch first; this plugin is not).
+- insert:
+    - id: coding-agent
+      name: '@dshd/coding-agent-host'

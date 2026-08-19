@@ -56,6 +56,16 @@ describe('event decoding', () => {
     }
   })
 
+  it('decodes coding-agent task-updated and verify-finished events', () => {
+    const task = decodeEvent(JSON.stringify({ type: 'task-updated', id: 't1', phase: 'working' }))
+    expect(task.ok).toBe(true)
+    if (task.ok) expect(task.event).toMatchObject({ type: 'task-updated', phase: 'working' })
+
+    const verify = decodeEvent(JSON.stringify({ type: 'verify-finished', id: 'v1', ok: false }))
+    expect(verify.ok).toBe(true)
+    if (verify.ok) expect(verify.event).toMatchObject({ type: 'verify-finished', ok: false })
+  })
+
   it('tolerates unknown event types (future minor versions)', () => {
     const res = decodeEvent(JSON.stringify({ type: 'future-thing', id: 'f1', whatever: 1 }))
     expect(res.ok).toBe(true)

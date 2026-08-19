@@ -283,6 +283,29 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
     void window.desktop.agentSetActiveSession(activeSessionId)
   }, [activeSessionId])
 
+  useEffect(() => {
+    if (!activeSessionId || !window.desktop.agentTaskStatus) return
+    let cancelled = false
+    const tick = async (): Promise<void> => {
+      const res = await window.desktop.agentTaskStatus(activeSessionId)
+      if (cancelled || !res.ok || !res.value?.phase) return
+      messageStore.dispatch({
+        type: 'task-updated',
+        id: `task:${activeSessionId}`,
+        phase: res.value.phase as 'idle' | 'planning' | 'working' | 'verifying' | 'completed' | 'failed',
+      })
+      if (res.value.verifyOk !== undefined) {
+        messageStore.dispatch({ type: 'verify-finished', id: `verify:${activeSessionId}`, ok: res.value.verifyOk })
+      }
+    }
+    void tick()
+    const timer = setInterval(() => void tick(), 2000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [activeSessionId])
+
   const sendImages = useCallback(
     async (targets: PendingImage[], text: string) => {
       // mark targets sending
@@ -368,6 +391,13 @@ export function ChatView({ tokens, activeSessionId }: ChatViewProps): React.JSX.
           {streamRunning ? '● live stream' : '○ stream offline'}
         </span>
       </div>
+      {(state.taskPhase || state.verifyOk !== undefined) && (
+        <div style={{ color: colors.textMuted, fontSize: font.sizeSm, marginBottom: space.sm }}>
+          {state.taskPhase ? `task: ${state.taskPhase}` : ''}
+          {state.taskPhase && state.verifyOk !== undefined ? ' · ' : ''}
+          {state.verifyOk !== undefined ? `verify: ${state.verifyOk ? 'ok' : 'failed'}` : ''}
+        </div>
+      )}
 
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: space.md }}>
         {state.messages.length === 0 && (

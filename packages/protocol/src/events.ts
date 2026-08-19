@@ -96,6 +96,18 @@ export interface QuestionResolvedEvent {
   outcome: 'answered' | 'cancelled'
 }
 
+export interface TaskUpdatedEvent {
+  type: 'task-updated'
+  id: string
+  phase: 'idle' | 'planning' | 'working' | 'verifying' | 'completed' | 'failed'
+}
+
+export interface VerifyFinishedEvent {
+  type: 'verify-finished'
+  id: string
+  ok: boolean
+}
+
 export interface UnknownEvent {
   type: 'unknown'
   rawType: string
@@ -114,6 +126,8 @@ export type AgentEvent =
   | QuestionEvent
   | ApprovalResolvedEvent
   | QuestionResolvedEvent
+  | TaskUpdatedEvent
+  | VerifyFinishedEvent
   | UnknownEvent
 
 const KNOWN_TYPES = new Set([
@@ -127,7 +141,9 @@ const KNOWN_TYPES = new Set([
   'completion',
   'question',
   'approval-resolved',
-  'question-resolved'
+  'question-resolved',
+  'task-updated',
+  'verify-finished'
 ])
 
 export type DecodeResult =
@@ -242,6 +258,18 @@ export function decodeEventObject(parsed: unknown): DecodeResult {
         type: 'question-resolved' as const,
         id,
         outcome: String(o.outcome) as 'answered' | 'cancelled'
+      }))
+    case 'task-updated':
+      return requireFields(obj, ['phase'], (o) => ({
+        type: 'task-updated' as const,
+        id,
+        phase: String(o.phase) as TaskUpdatedEvent['phase']
+      }))
+    case 'verify-finished':
+      return requireFields(obj, ['ok'], (o) => ({
+        type: 'verify-finished' as const,
+        id,
+        ok: Boolean(o.ok)
       }))
     default:
       return { ok: false, reason: `unhandled known type '${obj.type}'` }

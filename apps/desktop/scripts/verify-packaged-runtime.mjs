@@ -13,8 +13,9 @@
  * 6. No foreign-platform binaries are bundled in runtime (only darwin).
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const APP = process.argv[2] ?? 'release/mac-arm64/DeepSeek Harness Desktop.app'
 const RES = join(APP, 'Contents/Resources')
@@ -57,7 +58,25 @@ if (existsSync(nodeBin)) {
 const dshBinJs = join(runtimeDir, 'dsh-cli', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
 check('bundled dsh bin.js exists', existsSync(dshBinJs))
 
-check('desktop-tools.patch.yml (outside asar)', existsSync(join(RES, 'desktop-tools.patch.yml')))
+const patchPath = join(RES, 'desktop-tools.patch.yml')
+check('desktop-tools.patch.yml (outside asar)', existsSync(patchPath))
+if (existsSync(patchPath)) {
+  const patch = readFileSync(patchPath, 'utf8')
+  check('patch inserts coding-agent host row', /id:\s*coding-agent/.test(patch) && /insert:/.test(patch))
+}
+check('packaged coding-agent plugin', existsSync(join(RES, 'plugins/dsh-coding-agent/lib/index.js')))
+check('packaged coding-agent bundle', existsSync(join(RES, 'plugins/dsh-coding-agent/lib/process-bridge.js')))
+// The plugin runs an esbuild bundle of packages/harness-adapter/src; if the
+// source is newer than the bundled file the plugin silently runs stale code.
+{
+  const bundled = join(RES, 'plugins/dsh-coding-agent/lib/process-bridge.js')
+  const source = join(dirname(dirname(dirname(fileURLToPath(import.meta.url)))), 'packages/harness-adapter/src/process-bridge.ts')
+  const fresh = existsSync(bundled) && existsSync(source) && statSync(bundled).mtimeMs >= statSync(source).mtimeMs
+  check('coding-agent bundle is newer than its TS source', fresh)
+}
+check('packaged project-onboarding skill', existsSync(join(RES, 'skills/project-onboarding/SKILL.md')))
+check('packaged verify-before-complete skill', existsSync(join(RES, 'skills/verify-before-complete/SKILL.md')))
+check('packaged small-safe-edits skill', existsSync(join(RES, 'skills/small-safe-edits/SKILL.md')))
 check('icon.icns', existsSync(join(RES, 'icon.icns')))
 
 // Foreign-platform binaries in the bundled runtime would bloat the app and

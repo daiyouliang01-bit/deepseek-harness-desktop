@@ -16,7 +16,8 @@
     "package": "node scripts/prepare-runtime.mjs --release && electron-vite build && electron-builder",
     "verify:runtime": "node scripts/verify-packaged-runtime.mjs",
     "verify:licenses": "node ../../scripts/verify-licenses.mjs",
-    "verify:mac": "node scripts/verify-packaged-runtime.mjs && node ../../scripts/verify-licenses.mjs"
+    "verify:mac": "node scripts/verify-packaged-runtime.mjs && node ../../scripts/verify-licenses.mjs",
+    "bundle:coding-agent": "node scripts/bundle-coding-agent-plugin.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
@@ -35,6 +36,8 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "@dshd/coding-agent": "workspace:*",
+    "@dshd/harness-adapter": "workspace:*",
     "@dshd/permissions": "workspace:*",
     "@dshd/protocol": "workspace:*",
     "@dshd/session-store": "workspace:*",

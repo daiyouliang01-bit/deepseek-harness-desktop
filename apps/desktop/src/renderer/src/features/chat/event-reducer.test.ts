@@ -117,6 +117,15 @@ describe('event reducer — invariants', () => {
     expect(state.questions).toHaveLength(0)
   })
 
+  it('records task phase and verify result on protocol events', () => {
+    let state = reduceEvents(initialState, [
+      { type: 'task-updated', id: 't1', phase: 'working' },
+      { type: 'verify-finished', id: 'v1', ok: false },
+    ])
+    expect(state.taskPhase).toBe('working')
+    expect(state.verifyOk).toBe(false)
+  })
+
   it('is pure: input state is not mutated', () => {
     const before = JSON.stringify(initialState)
     reduceEvents(initialState, loadFixture('tool-loop'))

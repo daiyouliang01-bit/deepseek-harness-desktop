@@ -1,0 +1,25 @@
+{
+  "name": "@dshd/coding-agent-host",
+  "description": "Host-plane Coding Agent scaffold. Inserts a new Cordis row only; publishes no service.",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./process-bridge": "./lib/process-bridge.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/process-bridge.js",
+    "cordis.patch.yml"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

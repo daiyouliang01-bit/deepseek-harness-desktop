@@ -1,0 +1,5 @@
+# @dshd/coding-agent-host — insert-only host row.
+# Do not patch official Harness row ids from this file.
+- insert:
+    - id: coding-agent
+      name: '@dshd/coding-agent-host'

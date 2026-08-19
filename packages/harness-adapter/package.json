@@ -1,0 +1,21 @@
+{
+  "name": "@dshd/harness-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Thin adapter between official Harness surfaces and @dshd/coding-agent.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dshd/coding-agent": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

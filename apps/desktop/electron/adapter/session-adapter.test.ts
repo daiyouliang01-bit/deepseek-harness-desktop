@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -73,6 +73,18 @@ describe('SessionAdapter (mock wire)', () => {
     expect(sessionId).toBe('s3')
     expect(calls[0]).toMatchObject({ method: 'session.create', payload: { cwd: '/tmp/work' } })
     expect(store.getConversation('s3')).not.toBeNull()
+  })
+
+  it('reads a persisted coding-agent task sidecar for the session cwd', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'dshd-taskcwd-'))
+    await adapter.create(cwd)
+    mkdirSync(join(cwd, '.dsh', 'tasks'), { recursive: true })
+    writeFileSync(
+      join(cwd, '.dsh', 'tasks', 's3.json'),
+      JSON.stringify({ version: 1, phase: 'completed', lastVerify: [{ ok: true }] }),
+    )
+    expect(adapter.readTaskStatus('s3')).toEqual({ phase: 'completed', verifyOk: true })
+    rmSync(cwd, { recursive: true, force: true })
   })
 
   it('maps history events to protocol events and tracks lastSeq/hasMore', async () => {

@@ -3,6 +3,8 @@
  * with local SQLite cache and history → protocol-event mapping.
  */
 
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { AgentEvent } from '@dshd/protocol'
 import { SessionStore } from '@dshd/session-store'
 import { mapSessionEvent } from './event-mapper'
@@ -27,6 +29,18 @@ export interface HistoryPage {
   lastSeq: number
 }
 
+function parsePersistedTask(raw: string): { phase?: string; verifyOk?: boolean } | null {
+  try {
+    const parsed = JSON.parse(raw) as { version?: unknown; phase?: unknown; lastVerify?: Array<{ ok?: unknown }> }
+    if (parsed.version !== 1 || typeof parsed.phase !== 'string') return null
+    const lastVerify = parsed.lastVerify
+    const verifyOk = Array.isArray(lastVerify) && lastVerify.length > 0 ? lastVerify.every((item) => item.ok === true) : undefined
+    return { phase: parsed.phase, verifyOk }
+  } catch {
+    return null
+  }
+}
+
 export interface SessionAdapterOptions {
   client: RpcClient
   /** Local cache store (owned by the caller; the adapter never closes it). */
@@ -35,6 +49,8 @@ export interface SessionAdapterOptions {
 
 /** v1 note: session.delete is not part of the official surface; archiving is local-only. */
 export class SessionAdapter {
+  readonly #cwds = new Map<string, string>()
+
   constructor(private readonly options: SessionAdapterOptions) {}
 
   private get client(): RpcClient {
@@ -60,7 +76,20 @@ export class SessionAdapter {
       cwd ? { cwd } : {}
     )
     this.store.upsertConversation(res.sessionId, '', Date.now())
+    if (cwd) this.#cwds.set(res.sessionId, cwd)
     return { sessionId: res.sessionId }
+  }
+
+  /** Read the coding-agent task sidecar written under the session cwd. */
+  readTaskStatus(sessionId: string): { phase?: string; verifyOk?: boolean } | null {
+    const cwd = this.#cwds.get(sessionId)
+    if (!cwd) return null
+    try {
+      const raw = readFileSync(join(cwd, '.dsh', 'tasks', `${sessionId}.json`), 'utf8')
+      return parsePersistedTask(raw)
+    } catch {
+      return null
+    }
   }
 
   /** Fetch a history page and map raw events to protocol events. */
