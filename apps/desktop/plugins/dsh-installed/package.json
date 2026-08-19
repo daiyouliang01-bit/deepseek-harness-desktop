@@ -1,6 +1,6 @@
 {
-  "name": "@dshd/community-links",
-  "description": "Community resource links for DeepSeek Harness Desktop: a 社区 settings page plus a sidebar footer entry for Awesome DSH and the DeepSeek Harness 橙皮书.",
+  "name": "@dshd/dsh-installed",
+  "description": "Settings → Plugins tab that lists user-installed plugins and skills with descriptions and an explicit update check. Replaces the 1024 Store / community marketplace surface.",
   "version": "1.0.0",
   "type": "module",
   "main": "lib/index.js",
@@ -17,6 +17,9 @@
   "engines": {
     "node": ">=20"
   },
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -24,7 +27,9 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-slots"
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-settings-plugins"
       ],
       "platform": "web"
     }

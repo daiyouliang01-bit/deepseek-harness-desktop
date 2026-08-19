@@ -1,0 +1,6 @@
+# @dshd/dsh-installed — user-installed plugin & skill inventory.
+# Mounted by the web profile's cordis.patch.yml insert list
+# (same mechanism as @dshd/community-links).
+- insert:
+    - id: dsh-installed
+      name: '@dshd/dsh-installed'

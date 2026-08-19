@@ -2,7 +2,7 @@
  * Registered in the web-app's client module loader (same format as
  * dsh-context / dsh-better-sidebar):
  *   - settings.section "社区": a settings page with community resource cards
- *   - sidebar.footer.action: a compact footer entry opening DSH 1024Store
+ *   - sidebar.footer.action: a compact footer entry opening Awesome DSH docs
  * Links open in the system browser via target="_blank" anchors (the desktop
  * shell forwards window-open to shell.openExternal).
  */
@@ -20,16 +20,6 @@ window.__ModuleLoader__.load({
         title: 'Awesome DeepSeek Harness',
         desc: '插件 / 工具 / 基础设施精选列表',
         url: 'https://deepseekdocs.com/',
-      },
-      {
-        title: 'DSH 1024Store',
-        desc: '社区插件目录 4120+ · 在线插件市场与公开查询 API',
-        url: 'https://deepseek1024.com/',
-      },
-      {
-        title: 'dshfind',
-        desc: 'DSH 学习与分享社区 · 原理课程 · 插件市场',
-        url: 'https://dshfind.com/',
       },
       {
         title: 'DeepSeek Harness 橙皮书',
@@ -88,11 +78,11 @@ window.__ModuleLoader__.load({
       return h(
         'a',
         {
-          href: 'https://deepseek1024.com/',
+          href: 'https://deepseekdocs.com/',
           target: '_blank',
           rel: 'noreferrer',
           style: FOOTER,
-          title: '社区资源：1024 Store / Awesome DSH / dshfind / 橙皮书',
+          title: '社区资源：Awesome DSH / 橙皮书',
         },
         '🌐 社区',
       );

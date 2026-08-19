@@ -2,8 +2,8 @@
 
 DSH Desktop 壳内「社区资源」入口插件：
 
-- **设置 → 社区**：卡片列出 Awesome DeepSeek Harness（deepseekdocs.com）、DSH 1024Store（deepseek1024.com）、dshfind、DeepSeek Harness 橙皮书。
-- **侧边栏底部**：🌐 社区 快捷入口（直达 DSH 1024Store）。
+- **设置 → 社区**：卡片列出 Awesome DeepSeek Harness（deepseekdocs.com）与 DeepSeek Harness 橙皮书。插件市场 / 1024 Store 已从本入口移除。
+- **侧边栏底部**：🌐 社区 快捷入口（直达 Awesome DSH 文档）。
 
 实现：client 半区注册 `settings.section` 与 `sidebar.footer.action` 两个 Slot；链接用 `target="_blank"` 锚点，由桌面壳转发到系统浏览器，不需要任何 IPC。host 半区为 no-op。
 
