@@ -83,6 +83,14 @@ export function ConversationList({ tokens, activeSessionId, onSelect }: Conversa
     void refresh()
   }, [refresh])
 
+  // The runtime may not be ready on first mount (e.g. force-shell startup):
+  // re-list once the runtime reports ready instead of leaving a stale error.
+  useEffect(() => {
+    return window.desktop.onRuntimeStatus((status) => {
+      if (status.state === 'ready') void refresh()
+    })
+  }, [refresh])
+
   // Track the first user message per session for auto titles (local only).
   useEffect(() => {
     return messageStore.subscribe((state) => {
@@ -225,9 +233,14 @@ export function ConversationList({ tokens, activeSessionId, onSelect }: Conversa
 
       <div style={{ flex: 1, overflow: 'auto', padding: `0 ${space.sm}px ${space.md}px` }}>
         {error && (
-          <p style={{ color: colors.danger, fontSize: font.sizeSm, padding: `0 ${space.xs}px`, marginBottom: space.sm }}>
-            ⚠ {error}
-          </p>
+          <div style={{ padding: `0 ${space.xs}px`, marginBottom: space.sm }}>
+            <p style={{ color: colors.danger, fontSize: font.sizeSm, margin: `0 0 ${space.xs}px` }}>
+              ⚠ {error}
+            </p>
+            <button className="mini" onClick={() => void refresh()}>
+              重试
+            </button>
+          </div>
         )}
 
         {visible.length === 0 && !busy && (
