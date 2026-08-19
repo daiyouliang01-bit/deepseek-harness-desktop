@@ -732,6 +732,17 @@ ipcMain.handle('sessions:archive', (_e, sessionId: string) => {
   adapter.archive(sessionId)
   return { ok: true }
 })
+ipcMain.handle('sessions:list-archived', () => {
+  const adapter = ensureSessionAdapter()
+  if (!adapter) return { ok: false, error: 'runtime not ready' }
+  return { ok: true, value: adapter.listArchived() }
+})
+ipcMain.handle('sessions:unarchive', (_e, sessionId: string) => {
+  const adapter = ensureSessionAdapter()
+  if (!adapter) return { ok: false, error: 'runtime not ready' }
+  adapter.unarchive(String(sessionId))
+  return { ok: true }
+})
 
 // --- agent IPC (M3): prompt/cancel + active session for the live stream ---
 

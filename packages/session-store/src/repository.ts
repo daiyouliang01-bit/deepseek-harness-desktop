@@ -94,6 +94,14 @@ export class SessionStore {
     return rows.map(rowToConversation)
   }
 
+  /** Archived-only conversations, newest first (for the settings page). */
+  listArchived(): ConversationRow[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM conversations WHERE archived = 1 ORDER BY updated_at DESC`)
+      .all() as Array<Record<string, unknown>>
+    return rows.map(rowToConversation)
+  }
+
   setArchived(id: string, archived: boolean): void {
     this.db.prepare(`UPDATE conversations SET archived = ? WHERE id = ?`).run(archived ? 1 : 0, id)
   }
