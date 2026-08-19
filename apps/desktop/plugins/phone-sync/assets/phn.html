@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>DSH 手机端</title>
+  <link rel="stylesheet" href="/phn/phn.css">
+</head>
+<body>
+  <header>
+    <h1>DSH 手机端</h1>
+    <span class="sub" id="live">只同步运行中</span>
+  </header>
+  <div id="wf" class="wf" hidden>
+    <div class="wf-status" id="wf-status">空闲</div>
+    <div class="wf-phase" id="wf-phase"></div>
+    <div class="wf-log" id="wf-log"></div>
+  </div>
+  <div class="toolbar">
+    <button type="button" class="tb on" id="tb-important">重要内容</button>
+    <button type="button" class="tb" id="tb-raw">完整</button>
+  </div>
+  <div id="view"><div class="empty">加载中…</div></div>
+  <script src="/phn/phn.js"></script>
+</body>
+</html>

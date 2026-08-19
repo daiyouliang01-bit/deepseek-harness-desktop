@@ -122,13 +122,19 @@ window.__ModuleLoader__.load({
 
       var start = useCallback(function () {
         var api = bridge();
-        if (!api) return;
+        if (!api || !api.phoneStart) {
+          setError('当前窗口没有桌面隧道桥。固定域名已可用：https://dsh.dpharness.xyz （named tunnel，不必点启动隧道）');
+          return;
+        }
         setBusy(true);
         api
           .phoneStart()
           .then(function (res) {
-            if (res && res.ok && res.value) setStatus(res.value);
-            else setError((res && res.error) || '启动失败');
+            if (res && res.ok && res.value) {
+              setStatus(res.value);
+              if (res.value.phase !== 'active' && res.value.message) setError(res.value.message);
+              else setError(null);
+            } else setError((res && res.error) || '启动失败');
           })
           .catch(function (e) {
             setError(String((e && e.message) || e));
@@ -194,7 +200,7 @@ window.__ModuleLoader__.load({
                 copied ? '✓ 已复制' : '复制',
               ),
             ])
-          : h('p', { style: MUTED }, '启动隧道后，手机可通过生成的 trycloudflare.com 地址访问。'),
+          : h('p', { style: MUTED }, '固定域名已在跑：https://dsh.dpharness.xyz （指向 PIN 门）。下面「启动隧道」是额外的临时 trycloudflare，一般不用。'),
         h('div', { style: ROW }, [
           h(
             'button',
@@ -341,6 +347,79 @@ window.__ModuleLoader__.load({
       ]);
     }
 
+    function PairCard() {
+      var api = bridge();
+      var [url, setUrl] = useState('');
+      var [qr, setQr] = useState('');
+      var [copied, setCopied] = useState(false);
+      var [msg, setMsg] = useState('');
+      var [devs, setDevs] = useState([]);
+      var refresh = useCallback(function () {
+        if (!api || !api.pairList) return;
+        api.pairList().then(function (res) {
+          if (res && res.ok) setDevs(res.value || []);
+        });
+      }, []);
+      useEffect(function () { refresh(); }, [refresh]);
+      var mint = useCallback(function () {
+        setMsg('正在签发…');
+        var apply = function (res) {
+          if (res && res.ok && res.url) {
+            setUrl(res.url);
+            setQr(res.qrSvg || '');
+            setMsg('10 分钟内用手机扫码。复制这个绑定链接打开即可，不用再输 PIN。');
+          } else setMsg((res && res.error) || '签发失败（需先在本页设置 PIN，并用源码/新打包的桌面壳）');
+        };
+        if (api && api.pairMint) {
+          api.pairMint().then(apply).catch(function (e) { setMsg(String(e && e.message || e)); });
+          return;
+        }
+        fetch('http://127.0.0.1:35881/__pair/mint', { method: 'POST', headers: { 'content-type': 'application/json' } })
+          .then(function (r) { return r.json(); })
+          .then(apply)
+          .catch(function () {
+            setMsg('桌面壳是旧版，没有 pairMint；PIN 门也还没有 /__pair/mint。请用仓库里 pnpm --filter @dshd/desktop dev 启动，或重新打包后再试。');
+          });
+      }, []);
+      var copyPair = useCallback(function () {
+        if (!url) return;
+        try {
+          navigator.clipboard.writeText(url).then(function () {
+            setCopied(true);
+            setTimeout(function () { setCopied(false); }, 1500);
+          }, function () {});
+        } catch (e) { /* clipboard unavailable */ }
+      }, [url]);
+      var revoke = useCallback(function (id) {
+        if (!api || !api.pairRevoke) return;
+        api.pairRevoke(id).then(function () { refresh(); });
+      }, [refresh]);
+      return h('div', { style: CARD }, [
+        h('div', { style: CARD_TITLE }, '扫码永久绑定'),
+        h('p', { style: MUTED }, '固定域名 https://dsh.dpharness.xyz 。绑定链接 10 分钟有效、只能用一次。扫码或打开绑定链接后该手机免 PIN，只开放 /phn。'),
+        h('div', { style: ROW }, [
+          h('button', { style: BTN, onClick: mint }, '生成二维码'),
+        ]),
+        qr ? h('div', {
+          style: { marginTop: 12, width: 220, height: 220, background: '#fff', borderRadius: 12, overflow: 'hidden' },
+          dangerouslySetInnerHTML: { __html: qr },
+        }) : null,
+        url ? h('div', { style: URLBOX }, [
+          h('code', { style: CODE }, url),
+          h('button', { style: BTN, onClick: copyPair }, copied ? '✓ 已复制' : '复制绑定链接'),
+        ]) : null,
+        msg ? h('p', { style: MUTED }, msg) : null,
+        h('div', { style: { marginTop: 10 } },
+          (devs || []).map(function (d) {
+            return h('div', { key: d.id, style: ROW }, [
+              h('span', { style: { fontSize: 12, flex: 1 } }, d.label + ' · ' + d.id.slice(0, 10)),
+              h('button', { style: BTN_DANGER, onClick: function () { revoke(d.id); } }, '解除'),
+            ]);
+          }),
+        ),
+      ]);
+    }
+
     function PhoneSettingsPage() {
       var d = bridge();
       return h('div', { style: WRAP }, [
@@ -353,18 +432,25 @@ window.__ModuleLoader__.load({
           ),
         ]),
         d ? h(TunnelCard) : h('div', { style: CARD }, '请从 DSH Desktop 桌面应用打开本页以管理隧道与 PIN。'),
+        d ? h(PairCard) : null,
         d ? h(PinCard) : null,
         h(NotesCard),
       ]);
     }
 
     var HIDE_REMOTE_PHONE_CSS = [
-      '/* Hide dsh-web-ui-all 移动端远程控制 (phone icon between 社区 and 检查更新).',
-      '   Keep 检查更新. It duplicates @dshd/phone-sync. */',
+      '/* Hide dsh-web-ui-all 移动端远程控制 and its white-square 检查更新 trigger.',
+      '   Updates now live in 设置 → 插件 → 已安装. */',
       'button[aria-label="移动端远程控制"],',
       'button[title="移动端远程控制"],',
       'button[aria-label="Mobile remote control"],',
-      'button[title="Mobile remote control"] { display: none !important; }',
+      'button[title="Mobile remote control"],',
+      'button[aria-label="检查更新"],',
+      'button[aria-label="发现新版本，检查更新"],',
+      'button[title="检查更新"],',
+      'button[title="发现新版本，检查更新"] { display: none !important; }',
+      '/* Keep the official left sidebar expanded. */',
+      '.hHd-Xa_toggle { display: none !important; }',
     ].join('\n');
 
     function apply(ctx) {
@@ -374,7 +460,14 @@ window.__ModuleLoader__.load({
         tag.setAttribute('data-hide', 'remote-web-ui-phone');
         tag.textContent = HIDE_REMOTE_PHONE_CSS;
         document.head.appendChild(tag);
+        var timer = setInterval(function () {
+          var collapsed = document.querySelector('.hHd-Xa_root.hHd-Xa_collapsed');
+          if (!collapsed) return;
+          var toggle = collapsed.querySelector('.hHd-Xa_toggle');
+          if (toggle) toggle.click();
+        }, 800);
         return function () {
+          clearInterval(timer);
           if (tag.parentNode) tag.parentNode.removeChild(tag);
         };
       }, 'phone-settings: hide duplicate remote-web-ui phone entry');

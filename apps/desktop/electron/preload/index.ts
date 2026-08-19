@@ -100,6 +100,10 @@ const api = {
   agentAttachment: (sessionId: string, attachmentId: string): Promise<SessionOpResult<{ data: string; mediaType: string; name?: string }>> =>
     ipcRenderer.invoke('agent:attachment', sessionId, attachmentId),
   agentStreamState: (): Promise<{ running: boolean }> => ipcRenderer.invoke('agent:stream-state'),
+  agentTaskStatus: (
+    sessionId: string,
+  ): Promise<SessionOpResult<{ phase?: string; verifyOk?: boolean } | null>> =>
+    ipcRenderer.invoke('agent:task-status', sessionId),
   autolaunchGet: (): Promise<{ enabled: boolean }> => ipcRenderer.invoke('autolaunch:get'),
   autolaunchSet: (enabled: boolean): Promise<{ ok: boolean }> => ipcRenderer.invoke('autolaunch:set', enabled),
   onDeepLink: (cb: (url: string) => void): (() => void) => {
@@ -141,7 +145,11 @@ const api = {
   pinSet: (pin: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('pin:set', pin),
   pinStatus: (): Promise<{ ok: boolean; value?: { enabled: boolean; locked: boolean; lockRemainingMs: number } }> =>
     ipcRenderer.invoke('pin:status'),
-  pinResetLock: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('pin:reset-lock')
+  pinResetLock: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('pin:reset-lock'),
+  pairMint: (): Promise<{ ok: boolean; url?: string; exp?: number; qrSvg?: string; error?: string }> => ipcRenderer.invoke('pair:mint'),
+  pairList: (): Promise<{ ok: boolean; value?: { id: string; label: string; createdAt: number; lastSeenAt: number }[]; error?: string }> =>
+    ipcRenderer.invoke('pair:list'),
+  pairRevoke: (id: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('pair:revoke', id),
 }
 
 contextBridge.exposeInMainWorld('desktop', api)

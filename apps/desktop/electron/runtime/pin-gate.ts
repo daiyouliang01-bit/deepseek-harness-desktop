@@ -25,6 +25,7 @@ import { createServer, request as httpRequest, type IncomingMessage, type Server
 import { connect as netConnect, type Socket } from 'node:net'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { DEVICE_COOKIE, PairStore, isLoopbackAddress, parseNamedCookie } from './pair-store'
 
 const MIN_PIN_LENGTH = 4
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
@@ -65,6 +66,8 @@ export interface PinGateOptions {
    * to expose the full dsh web UI through the PIN (plan R34 opt-in).
    */
   allowFullApp?: boolean
+  /** Public origin printed into pairing QR (named tunnel). */
+  publicBaseUrl?: string
 }
 
 interface StoredPin {
@@ -99,10 +102,12 @@ export class PinGate {
   private failures: number[] = []
   private lockedUntil = 0
   private hashPath: string
+  private pairs: PairStore
 
   constructor(opts: PinGateOptions) {
     this.opts = opts
     this.hashPath = join(opts.stateDir, 'pin-hash.json')
+    this.pairs = new PairStore(opts.stateDir, { publicBase: opts.publicBaseUrl })
     this.load()
   }
   // ----- persistence -----
@@ -186,6 +191,18 @@ export class PinGate {
     return { enabled: this.hasPin(), locked: this.isLocked(), lockRemainingMs: this.lockRemainingMs() }
   }
 
+  mintPair(): ReturnType<PairStore['mint']> {
+    return this.pairs.mint({ loopback: true, pinEnabled: this.hasPin() })
+  }
+
+  listPaired(): ReturnType<PairStore['list']> {
+    return this.pairs.list()
+  }
+
+  revokePaired(id: string): ReturnType<PairStore['revoke']> {
+    return this.pairs.revoke(id)
+  }
+
   // ----- session management -----
 
   private issueSession(): string {
@@ -251,7 +268,7 @@ export class PinGate {
       minlength="4" autofocus ${locked ? 'disabled' : ''}>
     <button ${locked ? 'disabled' : ''}>解锁</button>
   </form>` : `
-  <p>访问码尚未设置。请在桌面端点击右下角「📱 手机」按钮完成设置后重试。</p>
+  <p>访问码尚未设置。请在桌面端打开「设置 → 手机」完成设置后重试。</p>
   <form method="post" action="/__pin">
     <input type="password" name="pin" inputmode="numeric" minlength="4" disabled>
     <button disabled>尚未设置访问码</button>
@@ -278,17 +295,42 @@ export class PinGate {
       return
     }
 
+    if (url.pathname === '/__pair' && req.method === 'GET') {
+      this.handlePairConsume(url, res)
+      return
+    }
+
+    if (url.pathname === '/__pair/mint' || url.pathname === '/__pair/devices' || url.pathname === '/__pair/revoke') {
+      this.handlePairAdmin(req, res, url)
+      return
+    }
+
     // PIN form submit
     if (url.pathname === '/__pin' && req.method === 'POST') {
       void this.handlePinSubmit(req, res)
       return
     }
 
-    // Any other path: require auth
-    if (!this.sessionValid(this.parseCookie(req))) {
+    const pinOk = this.sessionValid(this.parseCookie(req))
+    const device = this.pairs.verifyCookie(parseNamedCookie(req.headers.cookie, DEVICE_COOKIE))
+    if (!pinOk && !device) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
       res.end(this.renderPinPage())
       return
+    }
+
+    // Device cookie alone never unlocks the full Web UI (plan R1).
+    if (device && !pinOk) {
+      if (url.pathname === '/') {
+        res.writeHead(302, { location: '/phn', 'cache-control': 'no-store' })
+        res.end()
+        return
+      }
+      if (!this.pathAllowed(url.pathname)) {
+        res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' })
+        res.end('403: paired phone may only use /phn')
+        return
+      }
     }
 
     // Path allow-list (plan R34): a PIN grants the phone console only.
@@ -317,6 +359,106 @@ export class PinGate {
   private pathAllowed(pathname: string): boolean {
     if (pathname === PHN_ROUTE_PREFIX || pathname.startsWith(PHN_ROUTE_PREFIX + '/')) return true
     return ALLOWED_STANDALONE.has(pathname)
+  }
+
+  private corsHeaders(req: IncomingMessage): Record<string, string> {
+    const origin = String(req.headers.origin ?? '')
+    const allow =
+      origin.startsWith('http://127.0.0.1:') || origin.startsWith('http://localhost:') ? origin : ''
+    const headers: Record<string, string> = {
+      'cache-control': 'no-store',
+      'content-type': 'application/json; charset=utf-8',
+    }
+    if (allow) {
+      headers['access-control-allow-origin'] = allow
+      headers['access-control-allow-methods'] = 'GET, POST, OPTIONS'
+      headers['access-control-allow-headers'] = 'content-type'
+    }
+    return headers
+  }
+
+  private handlePairAdmin(req: IncomingMessage, res: ServerResponse, url: URL): void {
+    const loopback = isLoopbackAddress(req.socket.remoteAddress)
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, this.corsHeaders(req))
+      res.end()
+      return
+    }
+    const send = (status: number, obj: unknown) => {
+      res.writeHead(status, this.corsHeaders(req))
+      res.end(JSON.stringify(obj))
+    }
+    if (!loopback) {
+      send(404, { ok: false, error: 'not found' })
+      return
+    }
+    if (url.pathname === '/__pair/mint' && req.method === 'POST') {
+      send(200, this.pairs.mint({ loopback: true, pinEnabled: this.hasPin() }))
+      return
+    }
+    if (url.pathname === '/__pair/devices' && req.method === 'GET') {
+      send(200, { ok: true, value: this.pairs.list() })
+      return
+    }
+    if (url.pathname === '/__pair/revoke' && req.method === 'POST') {
+      void this.readJsonBody(req).then((body) => {
+        const id = typeof body.id === 'string' ? body.id : ''
+        send(200, this.pairs.revoke(id || '*'))
+      })
+      return
+    }
+    send(404, { ok: false, error: 'not found' })
+  }
+
+  private readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+    return new Promise((resolve) => {
+      const chunks: Buffer[] = []
+      req.on('data', (c: Buffer) => chunks.push(c))
+      req.on('end', () => {
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as Record<string, unknown>)
+        } catch {
+          resolve({})
+        }
+      })
+      req.on('error', () => resolve({}))
+    })
+  }
+
+  private handlePairConsume(url: URL, res: ServerResponse): void {
+    const ticket = url.searchParams.get('t') ?? ''
+    const out = this.pairs.consume(ticket)
+    if (!out.ok || !out.cookieValue) {
+      res.writeHead(400, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'referrer-policy': 'no-referrer',
+      })
+      res.end(this.renderPairResult(false, out.error || '绑定码无效或已过期，请回桌面重新生成二维码。'))
+      return
+    }
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'set-cookie': this.pairs.cookieHeader(out.cookieValue),
+      'cache-control': 'no-store',
+      'referrer-policy': 'no-referrer',
+    })
+    res.end(this.renderPairResult(true, '这台手机已绑定，以后打开不用再输入 PIN。'))
+  }
+
+  private renderPairResult(ok: boolean, message: string): string {
+    return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/>
+${ok ? '<meta http-equiv="refresh" content="0;url=/phn"/>' : ''}
+<title>${ok ? '已绑定' : '绑定失败'}</title>
+<style>
+  body{font-family:system-ui,sans-serif;background:#0f1115;color:#e8eaed;display:flex;min-height:100vh;margin:0;align-items:center;justify-content:center}
+  .card{background:#1a1d24;border:1px solid #2a2e37;border-radius:14px;padding:28px;width:min(360px,88vw)}
+  a{color:#8ab4ff}
+</style></head><body><div class="card">
+  <h1>${ok ? '绑定成功' : '绑定失败'}</h1>
+  <p>${message}</p>
+  ${ok ? '<p><a href="/phn">进入手机页</a>（无需 PIN）</p><script>location.replace("/phn")</script>' : '<p>请回到桌面「设置 → 手机」重新生成。</p>'}
+</div></body></html>`
   }
 
   private async handlePinSubmit(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -376,7 +518,7 @@ export class PinGate {
     }
     // Strip our auth cookie before forwarding upstream.
     const cookies = (headers.cookie as string | undefined)?.split(';').map((c) => c.trim())
-      .filter((c) => !c.startsWith(`${SESSION_COOKIE}=`)) ?? []
+      .filter((c) => !c.startsWith(`${SESSION_COOKIE}=`) && !c.startsWith(`${DEVICE_COOKIE}=`)) ?? []
     if (cookies.length > 0) headers.cookie = cookies.join('; ')
     else delete headers.cookie
     // Tunnels may send X-Forwarded-* that we should not pass through

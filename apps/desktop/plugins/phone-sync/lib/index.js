@@ -18,6 +18,12 @@
  *   phone/stop   → kill the tunnel
  */
 
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const ASSETS = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets')
+
 export default {
   inject: ['webServer', 'shell', 'timer', 'sessionQuery', 'workspaceRegistry', 'agents'],
   apply(ctx) {
@@ -164,7 +170,26 @@ export default {
 
     const sseClients = new Set()
     function broadcast(event, data) { const line = 'event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n'; for (const res of sseClients) { try { res.write(line) } catch (_e) {} } }
-    ctx.on('agent/status', (payload) => { const agent = payload && payload.agent; if (!agent) return; let sessionId = null; try { sessionId = String(agent.session && agent.session.id) } catch (_e) {}; if (sessionId) broadcast('agent-status', { sessionId, status: payload.status, time: Date.now() }) })
+    const sidOf = (agent) => { try { return String(agent && agent.session && agent.session.id || '') } catch (_e) { return '' } }
+    const leaf = (kind, sessionId, extra) => {
+      const out = { kind, sessionId: String(sessionId || ''), time: Date.now() }
+      if (extra && typeof extra === 'object') {
+        for (const k of Object.keys(extra)) {
+          const v = extra[k]
+          if (typeof v === 'string') out[k] = v.slice(0, 200)
+          else if (typeof v === 'number' || typeof v === 'boolean') out[k] = v
+        }
+      }
+      return out
+    }
+    ctx.on('agent/status', (payload) => { const agent = payload && payload.agent; if (!agent) return; const sessionId = sidOf(agent); if (sessionId) broadcast('agent-status', { sessionId, status: payload.status, time: Date.now() }) })
+    ctx.on('workflow/start', (info) => { broadcast('workflow', leaf('workflow/start', info && info.sessionId, { name: info && info.name, runId: info && info.runId })) })
+    ctx.on('workflow/phase', (info, title) => { broadcast('workflow', leaf('workflow/phase', info && info.sessionId, { title: String(title || ''), runId: info && info.runId })) })
+    ctx.on('workflow/log', (info, message) => { broadcast('workflow', leaf('workflow/log', info && info.sessionId, { message: String(message || ''), runId: info && info.runId })) })
+    ctx.on('workflow/end', (info, result) => { broadcast('workflow', leaf('workflow/end', info && info.sessionId, { ok: !!(result && result.ok), runId: info && info.runId })) })
+    ctx.on('subagent/start', (info) => { broadcast('workflow', leaf('subagent/start', info && info.parentSessionId, { label: info && info.label, depth: info && info.depth })) })
+    ctx.on('subagent/end', (info) => { broadcast('workflow', leaf('subagent/end', info && info.parentSessionId, { label: info && info.label })) })
+    ctx.on('agent/error', (payload) => { const sessionId = sidOf(payload && payload.agent); const err = payload && payload.error; broadcast('workflow', leaf('agent/error', sessionId, { message: String((err && err.message) || err || 'error') })) })
 
     const wrapId = (v) => (typeof v === 'object' && v !== null ? String(v.id || '') : String(v || ''))
     const titleOf = async (sid) => { try { const t = await sQuery.readTitle(sid); if (t && typeof t.title === 'string' && t.title) return t.title } catch (_e) {} return '' }
@@ -203,6 +228,15 @@ export default {
           titleById.set(sid, titleText || '')
         }
         for (const s of sessions) s.title = titleById.get(s.id) || ''
+        const q = qp(req)
+        if (q.live === '1') {
+          sessions = sessions.filter((s) => s.live)
+        }
+        sessions.sort((a, b) => {
+          if (a.live !== b.live) return a.live ? -1 : 1
+          if (a.time !== b.time) return (b.time || 0) - (a.time || 0)
+          return String(a.title || '').localeCompare(String(b.title || '')) || String(a.id).localeCompare(String(b.id))
+        })
         json(res, 200, { workspaces: workspaceList(), sessions })
       } catch (e) { json(res, 500, { error: String((e && e.message) || e) }) }
     } }))
@@ -230,38 +264,24 @@ export default {
       json(res, 200, { tunnel: '', upstream: UPSTREAM, time: Date.now() })
     } }))
 
-    const CSS = 'body{margin:0;background:#0e1117;color:#e6e6e6;font-family:system-ui,-apple-system,sans-serif;}header{position:sticky;top:0;background:#161b26;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #262c3a;}h1{font-size:15px;margin:0;}ul{list-style:none;margin:0;padding:8px 12px;}li{padding:12px 10px;border-bottom:1px solid #212836;}.wsec{font-size:12px;color:#7c8698;padding:14px 16px 4px;font-weight:600;}.tt{font-size:14px;}.sub{font-size:11px;color:#7c8698;margin-top:3px;}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#555;margin-right:6px;}.dot.g{background:#6bd968}.msg{padding:12px 16px;font-size:14px;line-height:1.55;}.rm{font-size:11px;letter-spacing:.5px;margin-bottom:5px;}.u{color:#7db3ff}.a{color:#d8d8d8}.t{color:#c5a46a;font-size:13px}.note{color:#5b6475}li:active{background:#161b26}.back{color:#9aa7bd;padding:10px 14px;font-size:14px;cursor:pointer;}.empty{color:#5b6475;padding:40px 16px;text-align:center;}.err{color:#e06c75;padding:12px 16px;}.sendrow{position:sticky;bottom:0;background:#0e1117;padding:10px 12px;border-top:1px solid #222a3a;}textarea{width:100%;box-sizing:border-box;background:#0e1117;color:#e6e6e6;border:1px solid #2a3242;border-radius:10px;padding:10px;font-size:15px;min-height:52px;}button{width:100%;margin-top:8px;padding:12px;background:#2f6feb;color:#fff;border:none;border-radius:10px;font-size:15px;}button:disabled{opacity:.5}.toolbar{padding:8px 14px;display:flex;gap:8px;border-bottom:1px solid #1a2130;font-size:12px;}.tb{color:#9aa7bd;cursor:pointer;padding:3px 11px;border:1px solid #2a3242;border-radius:999px;user-select:none;}.tb.on{color:#fff;border-color:#2f6feb;background:#1d2735}.expand{color:#2f6feb;font-size:12px;margin-top:6px;cursor:pointer;}.hiddennote{font-size:11px;color:#475060;padding:8px 16px;}'
-
-    routes.push(ws.register({
-      kind: 'exact',
-      path: '/phn',
-      handler: (req, res) => {
-        const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>DSH 手机端</title><style>${CSS}</style></head><body>
-<header><h1>DSH 手机端</h1><span class="sub" id="live"></span></header>
-<div class="toolbar"><span class="tb on" id="tb-important" onclick="setMode('important')">重要内容</span><span class="tb" id="tb-raw" onclick="setMode('raw')">完整</span></div>
-<div id="view"><div class="empty">加载中…</div></div>
-<script>
-let mode='important', sessions=[], workspaces=[], current=null
-const $=id=>document.getElementById(id)
-const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
-const fmt=t=>{if(!t)return'';const d=new Date(t);const now=new Date();const s=(now-d)/1000;if(s<60)return'刚刚';if(s<3600)return Math.floor(s/60)+' 分钟前';if(s<86400)return Math.floor(s/3600)+' 小时前';return Math.floor(s/86400)+' 天前'}
-function setMode(m){mode=m;$('tb-important').className='tb'+(m==='important'?' on':'');$('tb-raw').className='tb'+(m==='raw'?' on':'');if(current)loadSurface(current)}
-async function loadList(){try{const r=await fetch('/phn/api/sessions');const d=await r.json();sessions=d.sessions||[];workspaces=d.workspaces||[];renderList()}catch(e){$('view').innerHTML='<div class="err">加载失败: '+esc(e.message)+'</div>'}}
-function renderList(){const wm={};workspaces.forEach(w=>w.sessionIds.forEach(id=>wm[id]=w.title));const html=sessions.map(s=>'<li onclick="openS(\''+s.id+'\')"><span class="dot'+(s.live?' g':'')+'"></span><div class="tt">'+esc(s.title||'(无标题)')+'</div><div class="sub">'+(wm[s.id]?esc(wm[s.id])+' · ':'')+fmt(s.time)+'</div></li>').join('');$('view').innerHTML=html||'<div class="empty">暂无会话</div>'}
-async function openS(id){current=id;history.replaceState(null,'','#s='+id);loadSurface(id)}
-async function loadSurface(id){try{const r=await fetch('/phn/api/surface?id='+encodeURIComponent(id)+'&mode='+mode);const d=await r.json();renderSurface(d)}catch(e){$('view').innerHTML='<div class="err">'+esc(e.message)+'</div>'}}
-function renderSurface(d){const msgs=d.messages||[];let html='<div class="back" onclick="back()">‹ 返回</div>';for(const m of msgs){if(m.hidden){html+='<div class="hiddennote">…（已折叠系统注入内容）</div>';continue}if(m.role==='tool'){html+='<div class="msg t">'+esc(m.text||m.name)+'</div>';continue}html+='<div class="msg"><div class="rm '+(m.role==='user'?'u':'a')+'">'+(m.role==='user'?'你':'DSH')+'</div>'+esc(m.text);if(m.long)html+='<div class="expand" onclick="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'">展开全文</div><div style="display:none">'+esc(m.full)+'</div>';html+='</div>'}
-html+='<div class="sendrow"><textarea id="inp" placeholder="发消息…"></textarea><button onclick="send()">发送</button></div>';$('view').innerHTML=html}
-function back(){current=null;history.replaceState(null,'','#list');loadList()}
-async function send(){const t=$('inp').value.trim();if(!t||!current)return;try{const r=await fetch('/phn/api/send',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:current,message:t})});const d=await r.json();if(d.ok){$('inp').value='';loadSurface(current)}else{alert(d.error||'发送失败')}}catch(e){alert('发送失败: '+e.message)}}
-function onHash(){const m=location.hash.match(/^#s=(.+)$/);if(m&&m[1]){current=decodeURIComponent(m[1]);loadSurface(current)}else{current=null;loadList()}}
-window.addEventListener('hashchange',onHash)
-const es=new EventSource('/phn/events');es.addEventListener('agent-status',e=>{try{const d=JSON.parse(e.data);if(current===d.sessionId)loadSurface(current);const dot=document.querySelector('.dot.g');if(dot)dot.className='dot g'}catch(_e){}})
-onHash();setInterval(()=>{if(!current)loadList()},30000)
-</script></body></html>`
-        plain(res, 200, html)
+    const asset = (name, ct) => {
+      try {
+        return { ok: true, body: readFileSync(join(ASSETS, name)), ct }
+      } catch (e) {
+        return { ok: false, error: String((e && e.message) || e) }
       }
-    }))
+    }
+    const sendAsset = (res, name, ct) => {
+      const file = asset(name, ct)
+      if (!file.ok) return plain(res, 500, file.error, { ct: 'text/plain; charset=utf-8' })
+      res.writeHead(200, { 'content-type': ct, 'cache-control': 'no-store' })
+      res.end(file.body)
+    }
+    const page = (req, res) => sendAsset(res, 'phn.html', 'text/html; charset=utf-8')
+    routes.push(ws.register({ kind: 'exact', path: '/phn', handler: page }))
+    routes.push(ws.register({ kind: 'exact', path: '/phn/', handler: page }))
+    routes.push(ws.register({ kind: 'exact', path: '/phn/phn.css', handler: (_req, res) => sendAsset(res, 'phn.css', 'text/css; charset=utf-8') }))
+    routes.push(ws.register({ kind: 'exact', path: '/phn/phn.js', handler: (_req, res) => sendAsset(res, 'phn.js', 'text/javascript; charset=utf-8') }))
 
     // ───────────────────────── lifecycle + HTTP control ─────────────────────────
     // NOTE: the original dynamic plugin used `harness.handle('phone/*')`, which

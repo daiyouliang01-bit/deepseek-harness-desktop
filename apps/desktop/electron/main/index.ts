@@ -23,6 +23,7 @@ import { LedgerIntegration, readDshVersion } from '../runtime/ledger-integration
 import { ensurePhoneSyncLinked } from '../runtime/phone-sync-installer'
 import { ensureCommunityLinksLinked } from '../runtime/community-links-installer'
 import { ensurePhoneSettingsLinked } from '../runtime/phone-settings-installer'
+import { ensureCodingAgentLinked } from '../runtime/coding-agent-installer'
 import { PinGate } from '../runtime/pin-gate'
 import { applySidebarTrustPatch } from '../runtime/sidebar-trust-patch'
 import { GlobalShortcutManager } from '../shortcuts'
@@ -436,6 +437,12 @@ async function startRuntime(): Promise<RuntimeStatus> {
       logLine('stdout', `[phone-settings] linked ${linkedPhoneSettings}`)
     }
 
+    // Coding Agent host plugin: insert-only row, never fatal if linking fails.
+    const linkedCodingAgent = ensureCodingAgentLinked(dshHome, join(__dirname, '../..'), process.resourcesPath)
+    if (linkedCodingAgent) {
+      logLine('stdout', `[coding-agent] linked ${linkedCodingAgent}`)
+    }
+
     // Task 7.x: patch better-sidebar's /sidebar fence so it honors
     // DSH_TRUSTED_HOSTS (its trustedHostsOf only reads the raw loader row,
     // so remote /sidebar requests 403 even with --trusted-host set).
@@ -619,7 +626,8 @@ function startPinGate(upstreamUrl: string): void {
       // The phone user wants the FULL dsh web UI through the PIN (same as the
       // desktop window), not just the /phn mobile console. Allow by default;
       // set DSH_PIN_GATE_ALLOW_FULL=0 to restrict back to the phone console.
-      allowFullApp: process.env['DSH_PIN_GATE_ALLOW_FULL'] !== '0'
+      allowFullApp: process.env['DSH_PIN_GATE_ALLOW_FULL'] !== '0',
+      publicBaseUrl: process.env['DSH_PUBLIC_BASE'] || 'https://dsh.dpharness.xyz',
     })
     void gate.start().then((port) => {
       pinGate = gate
@@ -659,6 +667,18 @@ ipcMain.handle('pin:reset-lock', () => {
   if (!pinGate) return { ok: false, error: 'PIN gate not started' }
   pinGate.resetLock()
   return { ok: true }
+})
+ipcMain.handle('pair:mint', () => {
+  if (!pinGate) return { ok: false, error: 'PIN gate not started' }
+  return pinGate.mintPair()
+})
+ipcMain.handle('pair:list', () => {
+  if (!pinGate) return { ok: false, error: 'PIN gate not started' }
+  return { ok: true, value: pinGate.listPaired() }
+})
+ipcMain.handle('pair:revoke', (_e, id: string) => {
+  if (!pinGate) return { ok: false, error: 'PIN gate not started' }
+  return pinGate.revokePaired(typeof id === 'string' ? id : '')
 })
 
 ipcMain.handle('ui:open-official', () => openOfficialUI())
@@ -754,6 +774,11 @@ ipcMain.handle('agent:set-active-session', (_e, sessionId: string | null) => {
   return { ok: true }
 })
 ipcMain.handle('agent:stream-state', () => ({ running: streamBridge?.isRunning() ?? false }))
+ipcMain.handle('agent:task-status', (_e, sessionId: string) => {
+  const current = ensureSessionAdapter()
+  if (!current) return { ok: false, error: 'runtime not ready' }
+  return { ok: true, value: current.readTaskStatus(sessionId) }
+})
 
 // --- autolaunch IPC (P1) ---
 ipcMain.handle('autolaunch:get', () => ({ enabled: autolaunchEnabled(startHiddenCtrl) }))

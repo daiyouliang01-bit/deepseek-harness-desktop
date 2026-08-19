@@ -149,6 +149,24 @@ describe('PinGate (plan R16/R17/R29/R30/R33/R34)', () => {
     expect(upstreamSeen.at(-1)?.path).toBe('/api/sessions')
   })
 
+  it('pair mint is loopback JSON and requires PIN', async () => {
+    await startGate()
+    const noPin = await request(gatePort, '/__pair/mint', { method: 'POST' })
+    expect(noPin.status).toBe(200)
+    expect(JSON.parse(noPin.body).ok).toBe(false)
+    gate.setPin('1234')
+    const minted = await request(gatePort, '/__pair/mint', { method: 'POST' })
+    const body = JSON.parse(minted.body)
+    expect(body.ok).toBe(true)
+    expect(body.url).toMatch(/\/__pair\?t=/)
+    const t = new URL(body.url).searchParams.get('t')!
+    const used = await request(gatePort, `/__pair?t=${t}`)
+    expect(used.status).toBe(200)
+    expect(used.body).toContain('绑定成功')
+    expect(used.body).not.toContain('请输入访问密码')
+    expect(String(used.headers['set-cookie'])).toContain('dsh_device=')
+  })
+
   it('un-authed request is never proxied (PIN required first)', async () => {
     await startGate()
     gate.setPin('1234')
