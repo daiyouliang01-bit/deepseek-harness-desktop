@@ -70,7 +70,8 @@ check('packaged coding-agent bundle', existsSync(join(RES, 'plugins/dsh-coding-a
 // source is newer than the bundled file the plugin silently runs stale code.
 {
   const bundled = join(RES, 'plugins/dsh-coding-agent/lib/process-bridge.js')
-  const source = join(dirname(dirname(dirname(fileURLToPath(import.meta.url)))), 'packages/harness-adapter/src/process-bridge.ts')
+  // scripts/ → desktop → apps → repo root (4 levels up from the script file).
+  const source = join(dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url))))), 'packages/harness-adapter/src/process-bridge.ts')
   const fresh = existsSync(bundled) && existsSync(source) && statSync(bundled).mtimeMs >= statSync(source).mtimeMs
   check('coding-agent bundle is newer than its TS source', fresh)
 }
