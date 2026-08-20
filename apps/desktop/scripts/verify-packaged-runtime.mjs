@@ -14,7 +14,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const APP = process.argv[2] ?? 'release/mac-arm64/DeepSeek Harness Desktop.app'
