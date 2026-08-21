@@ -1,12 +1,13 @@
 /**
- * Generate the DeepSeek Harness Desktop app icon (512×512 PNG + .icns).
+ * Generate the DeepSeek Harness Desktop app icon (512×512 PNG + .icns + .ico).
  *
  * Pure-Node PNG writer (zlib) — no image dependencies. Draws a rounded
  * gradient square with a white chat-bubble glyph, matching the tray icon's
  * blue-purple palette.
  *
  * Usage: node scripts/generate-icon.mjs [out-dir]
- * Outputs: build/icon.png (512), build/icon.iconset/*.png, build/icon.icns
+ * Outputs: build/icon.png (512), build/icon.iconset/*.png, build/icon.icns,
+ *          build/icon.ico (256×256, PNG-compressed ICO for Windows)
  */
 import { deflateSync } from 'node:zlib'
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
@@ -134,5 +135,29 @@ try {
   console.log('[icon] wrote build/icon.png + build/icon.icns')
 } catch {
   console.warn('[icon] iconutil failed; keeping PNG only (icns skipped)')
+}
+
+// Windows .ico: single 256×256 PNG-compressed entry (Vista+ supported).
+function writeIco(pngBuf, icoPath) {
+  const header = Buffer.alloc(6)
+  header.writeUInt16LE(0, 0) // reserved
+  header.writeUInt16LE(1, 2) // type: icon
+  header.writeUInt16LE(1, 4) // count
+  const entry = Buffer.alloc(16)
+  entry.writeUInt8(0, 0) // width 0 = 256
+  entry.writeUInt8(0, 1) // height 0 = 256
+  entry.writeUInt8(0, 2) // palette
+  entry.writeUInt8(0, 3) // reserved
+  entry.writeUInt16LE(1, 4) // planes
+  entry.writeUInt16LE(32, 6) // bit count
+  entry.writeUInt32LE(pngBuf.length, 8) // bytes in resource
+  entry.writeUInt32LE(header.length + entry.length, 12) // image offset
+  writeFileSync(icoPath, Buffer.concat([header, entry, pngBuf]))
+}
+try {
+  writeIco(render(256), join(OUT, 'icon.ico'))
+  console.log('[icon] wrote build/icon.ico (256×256, Windows)')
+} catch (e) {
+  console.warn('[icon] icon.ico failed; Windows package falls back to default icon:', e.message)
 }
 console.log('[icon] done →', OUT)

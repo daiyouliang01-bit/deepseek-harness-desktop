@@ -1,57 +1,48 @@
 /**
- * Generate the app icon from the upper half of a source image.
+ * Generate the app icon from the upper part of a source image.
  *
- * Usage: node scripts/icon-from-image.mjs <source-image> [out-dir]
+ * Usage: node scripts/icon-from-image.mjs [source-image] [out-dir]
  *
- * Crops the top ~58% (head/shoulders), centers it on a square canvas with the
- * dominant background color, resizes to 512px, and regenerates the iconset +
- * .icns (macOS) via sips/iconutil.
+ * Crops a top square so the artwork reaches every edge of the icon canvas,
+ * resizes it to 1024px, and regenerates the iconset + .icns (macOS).
  */
 import sharp from 'sharp'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const SRC = process.argv[2]
-const OUT = process.argv[3] ? join(process.cwd(), process.argv[3]) : join(ROOT, 'apps/desktop/build')
+const DEFAULT_SRC = join(ROOT, 'scripts/assets/app-icon-source.png')
+const SRC = process.argv[2] ?? DEFAULT_SRC
+const OUT = process.argv[3] ? resolve(process.argv[3]) : join(ROOT, 'apps/desktop/build')
 
-if (!SRC || !existsSync(SRC)) {
-  console.error('usage: node scripts/icon-from-image.mjs <source-image> [out-dir]')
+if (!existsSync(SRC)) {
+  console.error('usage: node scripts/icon-from-image.mjs [source-image] [out-dir]')
   process.exit(1)
 }
 
-const CROP_RATIO = 0.58 // top 58% = head + shoulders
 const SIZE = 1024
 
 async function main() {
   const meta = await sharp(SRC).metadata()
   const w = meta.width ?? 1
   const h = meta.height ?? 1
-  const cropH = Math.round(h * CROP_RATIO)
-  console.log(`[icon] source ${w}x${h}, cropping top ${cropH}px (head/shoulders)`)
+  const cropSize = Math.min(w, h)
+  const left = Math.max(0, Math.floor((w - cropSize) / 2))
+  console.log(`[icon] source ${w}x${h}, cropping top square ${cropSize}x${cropSize}`)
 
-  // dominant background color: sample the top-left corner
-  const corner = await sharp(SRC).extract({ left: 0, top: 0, width: 4, height: 4 }).raw().toBuffer()
-  const bg = { r: corner[0], g: corner[1], b: corner[2] }
-  console.log(`[icon] background sampled: rgb(${bg.r},${bg.g},${bg.b})`)
-
-  // crop the upper part, then center it on a square canvas with that bg
+  // Crop to a square at the top of the image, then resize directly to the
+  // icon canvas. There is intentionally no inset/composite step: the source
+  // artwork must reach the canvas edges instead of acquiring a safety border.
   const cropped = await sharp(SRC)
-    .extract({ left: 0, top: 0, width: w, height: cropH })
-    .resize(Math.round(SIZE * 0.86), Math.round((SIZE * 0.86) * (cropH / w)), { fit: 'inside', withoutEnlargement: false })
-    .toBuffer()
-
-  const composed = await sharp({
-    create: { width: SIZE, height: SIZE, channels: 3, background: bg }
-  })
-    .composite([{ input: cropped, gravity: 'centre' }])
+    .extract({ left, top: 0, width: cropSize, height: cropSize })
+    .resize(SIZE, SIZE, { fit: 'fill' })
     .png()
     .toBuffer()
 
   mkdirSync(OUT, { recursive: true })
-  writeFileSync(join(OUT, 'icon.png'), composed)
+  writeFileSync(join(OUT, 'icon.png'), cropped)
   console.log('[icon] wrote icon.png (1024)')
 
   // iconset + icns
@@ -71,7 +62,7 @@ async function main() {
     [1024, 'icon_512x512@2x.png']
   ]
   for (const [s, name] of sizes) {
-    const buf = await sharp(composed).resize(s, s).png().toBuffer()
+    const buf = await sharp(cropped).resize(s, s).png().toBuffer()
     writeFileSync(join(iconset, name), buf)
   }
   try {
