@@ -50,6 +50,16 @@ jobs:
   package:
     runs-on: macos-latest
     needs: test
+    # Production signing (Gate 5): add these repo secrets and the same job
+    # signs + notarizes — electron-builder skips signing when CSC_NAME is
+    # empty, so unset secrets keep today's unsigned artifact.
+    env:
+      CSC_NAME: ${{ secrets.CSC_NAME }}
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

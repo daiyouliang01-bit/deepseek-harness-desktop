@@ -41,12 +41,16 @@ describe('TaskMonitor', () => {
     const monitor = new TaskMonitor(backend, lister)
     await monitor.poll()
 
+    const activated: string[] = []
+    monitor.onActivate = (sessionId) => activated.push(sessionId)
     sessions = [summary('a', false, 'Refactor')]
     await monitor.poll()
     expect(backend.notifications).toHaveLength(1)
     expect(backend.notifications[0].title).toBe('任务已结束')
     expect(backend.notifications[0].body).toBe('Refactor')
     expect(typeof backend.notifications[0].onClick).toBe('function')
+    backend.notifications[0].onClick?.()
+    expect(activated).toEqual(['a'])
     expect(backend.badges.at(-1)).toBe(0)
   })
 

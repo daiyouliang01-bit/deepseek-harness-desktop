@@ -79,7 +79,7 @@ export class TaskMonitor {
         for (const [sessionId, title] of this.running) {
           if (now.has(sessionId)) continue
           const label = title ?? `会话 ${sessionId.slice(0, 8)}`
-          this.backend.notify('任务已结束', label, () => this.onActivate?.())
+          this.backend.notify('任务已结束', label, () => this.onActivate?.(sessionId))
         }
       }
       this.running = now
@@ -94,6 +94,6 @@ export class TaskMonitor {
     }
   }
 
-  /** Optional hook: invoked when the user clicks a completion notification. */
-  onActivate?: () => void
+  /** Optional hook: invoked on notification click with the finished session id. */
+  onActivate?: (sessionId: string) => void
 }

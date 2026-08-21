@@ -411,6 +411,11 @@ const taskMonitor = new TaskMonitor(
     }
   }
 )
+// Clicking a completion notification jumps straight to that conversation,
+// not just to the window.
+taskMonitor.onActivate = (sessionId) => {
+  mainWindow?.webContents.send('agent:set-session', sessionId)
+}
 
 // Approval / question prompts that arrive while the user is away: surface a
 // clickable notification per request id (deduped — the live stream replays).
@@ -738,6 +743,20 @@ ipcMain.handle('app:quit', () => {
 })
 
 ipcMain.handle('runtime:get-status', () => runtime.getStatus())
+
+// P2-2 file-workflow bridge (foundation): reveal in Finder / open with the
+// default app. Generic by design — the file-preview plugin and diagnostics
+// both build on these rather than shelling out themselves.
+ipcMain.handle('files:reveal', (_e, target: unknown) => {
+  if (typeof target !== 'string' || target.length === 0) return false
+  shell.showItemInFolder(target)
+  return true
+})
+ipcMain.handle('files:open', async (_e, target: unknown) => {
+  if (typeof target !== 'string' || target.length === 0) return { ok: false, error: 'empty path' }
+  const message = await shell.openPath(target)
+  return message ? { ok: false, error: message } : { ok: true }
+})
 
 // P2 — read-only diagnostics snapshot for the settings page (external review
 // item #5): one authoritative answer to "what is ACTUALLY running" — real

@@ -46,6 +46,16 @@ const api = {
       ipcRenderer.removeListener('ui:open-shell', listener)
     }
   },
+  onSetSession: (callback: (sessionId: string) => void): (() => void) => {
+    const listener = (_e: unknown, sessionId: string) => callback(sessionId)
+    ipcRenderer.on('agent:set-session', listener)
+    return () => {
+      ipcRenderer.removeListener('agent:set-session', listener)
+    }
+  },
+  revealInFinder: (target: string): Promise<boolean> => ipcRenderer.invoke('files:reveal', target),
+  openWithDefaultApp: (target: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('files:open', target),
 
   // key vault (Task 3.5) — only masked keys and status cross the bridge
   listKeys: (): Promise<KeyRecord[]> => ipcRenderer.invoke('keys:list'),
