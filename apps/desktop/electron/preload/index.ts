@@ -30,6 +30,7 @@ const api = {
 
   // runtime lifecycle (Task 1.2/1.3)
   getRuntimeStatus: (): Promise<RuntimeStatus> => ipcRenderer.invoke('runtime:get-status'),
+  getDiagnostics: (): Promise<unknown> => ipcRenderer.invoke('diagnostics:get'),
   startRuntime: (): Promise<RuntimeStatus> => ipcRenderer.invoke('runtime:start'),
   stopRuntime: (): Promise<RuntimeStatus> => ipcRenderer.invoke('runtime:stop'),
   restartRuntime: (): Promise<RuntimeStatus> => ipcRenderer.invoke('runtime:restart'),

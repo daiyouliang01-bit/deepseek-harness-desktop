@@ -145,6 +145,88 @@ function DataDirSection({ tokens }: { tokens: Tokens }): React.JSX.Element {
   )
 }
 
+// P2 — real diagnostics (external review item #5): the settings page shows
+// what is ACTUALLY running (versions, pid, port, data dir), not hardcoded
+// copy that drifts from reality.
+interface Diagnostics {
+  appVersion: string
+  packaged: boolean
+  electron: string
+  node: string
+  platform: string
+  dshPinnedVersion: string | null
+  dshHome: string
+  profile: string
+  preferredPort: number
+  port3080InUse: boolean | null
+  runtime: {
+    state: string
+    pid: number | null
+    url: string | null
+    port: number | null
+    startedAt: number | null
+    lastError: string | null
+  }
+}
+
+function DiagnosticsSection({ tokens }: { tokens: Tokens }): React.JSX.Element {
+  const { colors, space, radius, font } = tokens
+  const [diag, setDiag] = useState<Diagnostics | null>(null)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    void window.desktop.getDiagnostics().then((d) => setDiag(d as Diagnostics))
+  }, [])
+  const copy = useCallback(() => {
+    if (!diag) return
+    void navigator.clipboard.writeText(JSON.stringify(diag, null, 2)).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }, [diag])
+  const row: React.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: space.md,
+    padding: `${space.sm}px 0`,
+    borderBottom: `1px solid ${colors.border}`
+  }
+  const kv = (k: string, v: React.ReactNode) => (
+    <div key={k} style={row}>
+      <span style={{ color: colors.textMuted, flexShrink: 0 }}>{k}</span>
+      <span style={{ color: colors.text, fontFamily: font.mono, fontSize: font.sizeSm, wordBreak: 'break-all', textAlign: 'right' }}>{v}</span>
+    </div>
+  )
+  return (
+    <section style={{ background: colors.surface, borderRadius: radius.md, padding: space.md, marginBottom: space.md }}>
+      <h3 style={{ color: colors.text, fontSize: font.sizeLg, margin: `0 0 ${space.sm}px` }}>诊断信息</h3>
+      {diag === null ? (
+        <p style={{ color: colors.textMuted, fontSize: font.sizeSm, margin: 0 }}>加载中…</p>
+      ) : (
+        <>
+          {kv('应用版本', `${diag.appVersion}（${diag.packaged ? '打包' : '开发'}）`)}
+          {kv('Electron / Node', `${diag.electron} / ${diag.node}`)}
+          {kv('Runtime 状态', diag.runtime.state)}
+          {diag.runtime.pid !== null && kv('Runtime PID', String(diag.runtime.pid))}
+          {diag.runtime.url !== null && kv('实际地址', diag.runtime.url)}
+          {kv('dsh 版本（pin）', diag.dshPinnedVersion ?? '未知')}
+          {kv('数据目录', diag.dshHome)}
+          {kv('Profile', diag.profile)}
+          {kv('首选端口', String(diag.preferredPort))}
+          {kv(':3080 独立实例', diag.port3080InUse === null ? '未知' : diag.port3080InUse ? '检测到在运行' : '未检测到')}
+          {diag.runtime.lastError && kv('最近错误', diag.runtime.lastError)}
+          <div style={{ display: 'flex', gap: space.sm, marginTop: space.md }}>
+            <button onClick={copy}>{copied ? '已复制 ✓' : '复制诊断信息'}</button>
+          </div>
+          <p style={{ color: colors.textMuted, fontSize: font.sizeSm, margin: `${space.md}px 0 0` }}>
+            模型路由由官方 Web UI 的模型选择器决定（会话级），设置页不再展示固定模型。
+          </p>
+        </>
+      )}
+    </section>
+  )
+}
+
 /**
  * Task 3.1 settings panel. Runtime controls + model/provider placeholders.
  * API key entry is intentionally NOT in the renderer (safeStorage lives in
@@ -195,21 +277,7 @@ export function SettingsPanel({
         </div>
       </section>
 
-      <section style={{ background: colors.surface, borderRadius: radius.md, padding: space.md, marginBottom: space.md }}>
-        <h3 style={{ color: colors.text, fontSize: font.sizeLg, margin: `0 0 ${space.sm}px` }}>Model & Provider</h3>
-        <div style={row}>
-          <span style={{ color: colors.textMuted }}>Provider</span>
-          <span style={{ color: colors.text }}>deepseek-official (managed by runtime)</span>
-        </div>
-        <div style={row}>
-          <span style={{ color: colors.textMuted }}>Model</span>
-          <span style={{ color: colors.text }}>deepseek-v4-flash (runtime default)</span>
-        </div>
-        <div style={row}>
-          <span style={{ color: colors.textMuted }}>API key</span>
-          <span style={{ color: colors.success }}>managed in OS keychain (main process)</span>
-        </div>
-      </section>
+      <DiagnosticsSection tokens={tokens} />
 
       <UpdateSection tokens={tokens} />
       <DesktopSection tokens={tokens} />
