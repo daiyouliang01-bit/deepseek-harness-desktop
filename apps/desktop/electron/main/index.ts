@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, shell, Tray } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, shell, Tray } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -16,6 +16,8 @@ import { SessionStore } from '@dshd/session-store'
 import { buildAppMenuTemplate } from '../menu'
 import { RuntimeNotifier } from '../notifications'
 import { TaskMonitor } from '../tasks/task-monitor'
+import { loadWindowState, saveWindowState, type SavedWindowState } from '../window-state'
+import { isPortFree } from '../runtime/port-probe'
 import { HarnessProcess } from '../runtime/harness-process'
 import { findRuntime } from '../runtime/dsh-bin'
 import type { RuntimeStatus } from '../runtime/runtime-types'
@@ -174,12 +176,17 @@ function createTray(): void {
 function installAppMenu(): void {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
-      buildAppMenuTemplate({
-        openCustomShell: () => openCustomShell(),
-        openOfficialUI: () => void openOfficialUI(),
-        reload: () => mainWindow?.webContents.reload(),
-        quit: () => app.quit()
-      }) as Electron.MenuItemConstructorOptions[]
+      buildAppMenuTemplate(
+        {
+          openCustomShell: () => openCustomShell(),
+          openOfficialUI: () => void openOfficialUI(),
+          reload: () => mainWindow?.webContents.reload(),
+          quit: () => app.quit()
+        },
+        // Dev-only menu entries (Custom Shell preview / Official Web UI /
+        // DevTools) stay out of packaged builds — external review item #10.
+        { devMode: !app.isPackaged }
+      ) as Electron.MenuItemConstructorOptions[]
     )
   )
 }
@@ -637,10 +644,22 @@ const startHiddenCtrl: LoginWindowController = {
 }
 const startHidden = shouldStartHidden(startHiddenCtrl)
 
+// P2 — remember window size/position across launches (debounced persist).
+let boundsPersistTimer: NodeJS.Timeout | null = null
+function persistWindowBounds(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) return
+  const b = mainWindow.getBounds()
+  const state: SavedWindowState = { width: b.width, height: b.height, x: b.x, y: b.y, maximized: mainWindow.isMaximized() }
+  saveWindowState(app.getPath('userData'), state)
+}
+
 function createWindow(): void {
+  const displays = screen.getAllDisplays().map((d) => d.workArea)
+  const saved = loadWindowState(app.getPath('userData'), displays)
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: saved.width,
+    height: saved.height,
+    ...(saved.x !== undefined && saved.y !== undefined ? { x: saved.x, y: saved.y } : {}),
     minWidth: 800,
     minHeight: 600,
     show: false,
@@ -658,13 +677,25 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     if (!startHidden) mainWindow?.show()
+    if (saved.maximized) mainWindow?.maximize()
   })
   mainWindow.on('closed', () => {
     mainWindow = null
   })
 
+  // Persist bounds as they change (debounced) and once more on close.
+  mainWindow.on('resize', () => {
+    if (boundsPersistTimer) clearTimeout(boundsPersistTimer)
+    boundsPersistTimer = setTimeout(persistWindowBounds, 500)
+  })
+  mainWindow.on('move', () => {
+    if (boundsPersistTimer) clearTimeout(boundsPersistTimer)
+    boundsPersistTimer = setTimeout(persistWindowBounds, 500)
+  })
+
   // Hide to tray on close (Task 1.5); quit only via tray/menu/Cmd+Q.
   mainWindow.on('close', (event) => {
+    persistWindowBounds()
     if (!isQuitting) {
       event.preventDefault()
       mainWindow?.hide()
@@ -697,6 +728,39 @@ ipcMain.handle('app:quit', () => {
 })
 
 ipcMain.handle('runtime:get-status', () => runtime.getStatus())
+
+// P2 — read-only diagnostics snapshot for the settings page (external review
+// item #5): one authoritative answer to "what is ACTUALLY running" — real
+// runtime state, versions, data dir, ports — instead of hardcoded copy.
+ipcMain.handle('diagnostics:get', async () => {
+  const status = runtime.getStatus()
+  let port3080InUse: boolean | null = null
+  try {
+    port3080InUse = !(await isPortFree(3080))
+  } catch {
+    port3080InUse = null // probe failure must not break the snapshot
+  }
+  return {
+    appVersion: app.getVersion(),
+    packaged: app.isPackaged,
+    electron: process.versions.electron ?? '?',
+    node: process.versions.node ?? '?',
+    platform: process.platform,
+    dshPinnedVersion: readDshVersion(runtimeDescriptor),
+    dshHome: DESKTOP_DSH_HOME,
+    profile: 'web',
+    preferredPort: PREFERRED_PORT,
+    port3080InUse,
+    runtime: {
+      state: status.state,
+      pid: status.pid ?? null,
+      url: status.ready?.url ?? null,
+      port: status.ready?.port ?? null,
+      startedAt: status.startedAt ?? null,
+      lastError: status.lastError ?? null
+    }
+  }
+})
 ipcMain.handle('runtime:start', () => startRuntime())
 ipcMain.handle('runtime:stop', async () => {
   await runtime.stop()
