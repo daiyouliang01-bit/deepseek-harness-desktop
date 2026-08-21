@@ -16,7 +16,8 @@
 
 | OS | Node | dsh | Status | Notes |
 |---|---|---|---|---|
-| macOS 26 (arm64) | 22.23.1 | 0.1.0-rc.6 | ✅ tested | dev machine (this workspace) |
+| macOS 26 (arm64) | 22.23.1 | 0.1.1-rc.2 | ✅ tested | 2026-08-21: harness-smoke 5/5 (real startup/HTTP/restart/persistence) + full unit suite 258 green; bundled runtime synced |
+| macOS 26 (arm64) | 22.23.1 | 0.1.0-rc.8 | ✅ tested | previous pin; backup at `~/.dsh-desktop.backup-20260821` |
 | macOS | ≥ 20 | same minor | ✅ expected | CI `macos-latest` |
 | Windows | ≥ 20 | same minor | 🔶 planned | CI `windows-latest` (Phase 5) |
 | Linux | ≥ 20 | same minor | 🔶 later | non-goal for first release |

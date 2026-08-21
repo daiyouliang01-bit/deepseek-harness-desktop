@@ -29,6 +29,13 @@ import { spawn } from 'node:child_process'
 
 const spawnMock = vi.mocked(spawn)
 
+/**
+ * A 200 response whose body carries the boot marker the health probe now
+ * requires (identity check: only `dsh web` serves __DSH_BOOT__). Factory, not
+ * a constant: a Response body can be consumed exactly once.
+ */
+const dshOkResponse = (): Response => new Response('<html>window.__DSH_BOOT__</html>', { status: 200 })
+
 describe('HarnessProcess (fake child)', () => {
   let fake: FakeChild
 
@@ -51,7 +58,7 @@ describe('HarnessProcess (fake child)', () => {
 
   it('resolves ready when the ready URL line is printed and health probe passes', async () => {
     // health probe: any HTTP answer counts as up
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
 
     const hp = new HarnessProcess()
     const readyPromise = hp.start()
@@ -72,7 +79,7 @@ describe('HarnessProcess (fake child)', () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockRejectedValueOnce(new Error('conn refused'))
-      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(dshOkResponse())
 
     const hp = new HarnessProcess({ healthProbeIntervalMs: 500 })
     const readyPromise = hp.start()
@@ -107,7 +114,7 @@ describe('HarnessProcess (fake child)', () => {
 
   it('marks stopped with error info on a non-zero exit after ready', async () => {
     const hp = new HarnessProcess()
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
     const readyPromise = hp.start()
     emitStdout('dsh web: http://127.0.0.1:1234')
     await readyPromise
@@ -119,7 +126,7 @@ describe('HarnessProcess (fake child)', () => {
   })
 
   it('stop() kills the process tree (SIGTERM escalation) and settles stopped', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
     const hp = new HarnessProcess()
     const readyPromise = hp.start()
     emitStdout('dsh web: http://127.0.0.1:1234')
@@ -129,12 +136,58 @@ describe('HarnessProcess (fake child)', () => {
     // exit arrives after SIGTERM
     fake.exitCode = 0
     fake.emit('exit', 0, 'SIGTERM')
-    await stopPromise
+    const outcome = await stopPromise
+    expect(outcome).toBe('exited')
     expect(hp.getStatus().state).toBe('stopped')
   })
 
+  it('stop() returns not-running when nothing is owned', async () => {
+    const hp = new HarnessProcess()
+    expect(await hp.stop()).toBe('not-running')
+  })
+
+  it('stop() escalates to group SIGKILL and still reports exited when the child dies during grace', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
+    const hp = new HarnessProcess()
+    const readyPromise = hp.start()
+    emitStdout('dsh web: http://127.0.0.1:1234')
+    await readyPromise
+
+    // Child ignores SIGTERM entirely.
+    const stopPromise = hp.stop(1_000)
+    await vi.advanceTimersByTimeAsync(1_000) // SIGTERM budget elapsed
+    // Escalation must already have been delivered synchronously.
+    expect(process.kill).toHaveBeenCalledWith(-4242, 'SIGKILL')
+    // Child succumbs to SIGKILL during the grace window.
+    fake.emit('exit', null, 'SIGKILL')
+    expect(await stopPromise).toBe('exited')
+    expect(hp.getStatus().state).toBe('stopped')
+  })
+
+  it('stop() returns timeout, marks error and reports UNCLEAN when the tree survives everything', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
+    const onStopped = vi.fn()
+    const hp = new HarnessProcess({ onStopped })
+    const readyPromise = hp.start()
+    emitStdout('dsh web: http://127.0.0.1:1234')
+    await readyPromise
+
+    // Child ignores SIGTERM AND SIGKILL (the unkillable-tree scenario).
+    const stopPromise = hp.stop(1_000)
+    await vi.advanceTimersByTimeAsync(1_000) // SIGTERM budget elapsed → escalate
+    expect(process.kill).toHaveBeenCalledWith(-4242, 'SIGKILL')
+    await vi.advanceTimersByTimeAsync(2_000) // kill grace elapsed → give up
+
+    expect(await stopPromise).toBe('timeout')
+    expect(hp.getStatus().state).toBe('error')
+    expect(hp.getStatus().lastError).toContain('4242')
+    expect(hp.getStatus().lastError).toContain('reaping')
+    // Unclean report is what keeps the ledger entry reapable next launch.
+    expect(onStopped).toHaveBeenCalledWith(false)
+  })
+
   it('restart() stops the old child and starts a fresh one', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
     const hp = new HarnessProcess()
     const p1 = hp.start()
     emitStdout('dsh web: http://127.0.0.1:1234')
@@ -157,7 +210,7 @@ describe('HarnessProcess (fake child)', () => {
   })
 
   it('emits statusChange events', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
     const hp = new HarnessProcess()
     const states: string[] = []
     hp.on('statusChange', (s) => states.push(s.state))
@@ -169,7 +222,7 @@ describe('HarnessProcess (fake child)', () => {
   })
 
   it('spawns with detached:true on POSIX (R3 — own process group for tree kill)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
     const hp = new HarnessProcess()
     const readyPromise = hp.start()
     emitStdout('dsh web: http://127.0.0.1:1234')
@@ -182,7 +235,7 @@ describe('HarnessProcess (fake child)', () => {
   })
 
   it('invokes ledger callbacks: onSpawned with pid+startedAt, onReady with info, onStopped(clean) on stop', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
     const spawned: Array<[number, number]> = []
     const readies: string[] = []
     const stopped: boolean[] = []
@@ -207,7 +260,7 @@ describe('HarnessProcess (fake child)', () => {
   })
 
   it('invokes onStopped(false) on an unexpected exit after ready', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
     const stopped: boolean[] = []
     const hp = new HarnessProcess({ onStopped: (clean) => stopped.push(clean) })
     const readyPromise = hp.start()
@@ -222,7 +275,7 @@ describe('HarnessProcess (fake child)', () => {
   it('uses the fixed port when it is free (Phase 2.2)', async () => {
     // real timers: isPortFree() does real net I/O which fake timers never settle
     vi.useRealTimers()
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
     const { findFreePort } = await import('./port-probe')
     const port = (await findFreePort(49_400, 5)) as number
 
@@ -241,7 +294,7 @@ describe('HarnessProcess (fake child)', () => {
 
   it('falls back to a free port when the fixed port is occupied (R24)', async () => {
     vi.useRealTimers()
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
     // occupy the preferred port
     const { createServer } = await import('node:net')
     const blocker = createServer()
@@ -285,7 +338,7 @@ describe('HarnessProcess (fake child)', () => {
   })
 
   it('auto-restarts after an unexpected exit (R9)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
     const hp = new HarnessProcess({ autoRestart: true })
     const readyPromise = hp.start()
     emitStdout('dsh web: http://127.0.0.1:1234')
@@ -311,7 +364,7 @@ describe('HarnessProcess (fake child)', () => {
   })
 
   it('gives up after maxRestartAttempts fast crashes (R22)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
     const hp = new HarnessProcess({ autoRestart: true, maxRestartAttempts: 2 })
     const readyPromise = hp.start()
     emitStdout('dsh web: http://127.0.0.1:1234')
@@ -349,7 +402,7 @@ describe('HarnessProcess (fake child)', () => {
   })
 
   it('does NOT auto-restart after a user-initiated stop()', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
     const hp = new HarnessProcess({ autoRestart: true })
     const readyPromise = hp.start()
     emitStdout('dsh web: http://127.0.0.1:1234')
@@ -365,7 +418,7 @@ describe('HarnessProcess (fake child)', () => {
   })
 
   it('does NOT auto-restart on a clean exit (code 0)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => dshOkResponse())
     const hp = new HarnessProcess({ autoRestart: true })
     const readyPromise = hp.start()
     emitStdout('dsh web: http://127.0.0.1:1234')

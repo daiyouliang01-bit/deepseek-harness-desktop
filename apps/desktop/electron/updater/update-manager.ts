@@ -98,7 +98,12 @@ export function createElectronUpdaterProvider(): UpdateProvider {
     check: async () => {
       const { autoUpdater } = require('electron-updater') as typeof import('electron-updater')
       const result = await autoUpdater.checkForUpdates()
-      const available = !!result?.updateInfo && result.updateInfo.version !== process.env.npm_package_version
+      // Compare against the REAL installed version (app.getVersion()), not
+      // npm_package_version: that env var only exists under `npm run` scripts
+      // and is undefined in a packaged .app, which made every packaged build
+      // report an update as available forever.
+      const currentVersion = (require('electron') as typeof import('electron')).app.getVersion()
+      const available = !!result?.updateInfo && result.updateInfo.version !== currentVersion
       return { available, version: result?.updateInfo?.version }
     },
     download: async () => {

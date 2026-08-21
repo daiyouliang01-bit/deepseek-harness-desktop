@@ -10,6 +10,21 @@ export type RuntimeState =
   | 'stopped'
   | 'error'
 
+/**
+ * Outcome of one `stop()` attempt (plan v1.4 residual gap: the old stop
+ * reported success unconditionally, so a tree that survived SIGTERM+SIGKILL
+ * was recorded as a clean stop and escaped next-launch reaping).
+ *
+ * - `'exited'` — the whole tree died (SIGTERM, or SIGKILL escalation).
+ * - `'not-running'` — nothing owned was alive (already exited, or an adopted
+ *   instance we deliberately do not kill).
+ * - `'timeout'` — the tree SURVIVED both signals within the budget. The
+ *   status moves to `error`, `onStopped(false)` records an unexpected exit so
+ *   the ledger keeps the pid reapable, and the caller should surface a
+ *   force-kill/log affordance instead of pretending all is well.
+ */
+export type StopOutcome = 'exited' | 'not-running' | 'timeout'
+
 export interface ReadyInfo {
   /** Base URL of the official Harness Web UI, e.g. http://127.0.0.1:41234 */
   url: string

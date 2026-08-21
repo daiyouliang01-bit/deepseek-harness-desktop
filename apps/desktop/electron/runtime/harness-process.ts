@@ -10,7 +10,8 @@ import {
   type HarnessProcessOptions,
   type ReadyInfo,
   type RuntimeState,
-  type RuntimeStatus
+  type RuntimeStatus,
+  type StopOutcome
 } from './runtime-types'
 
 const DEFAULT_READY_TIMEOUT_MS = 30_000
@@ -22,6 +23,17 @@ const RESTART_BACKOFF_BASE_MS = 1_000
 const RESTART_BACKOFF_CAP_MS = 30_000
 /** A crash within this window after ready counts as a "fast crash" (R22). */
 const FAST_CRASH_WINDOW_MS = 30_000
+/**
+ * Grace granted to SIGKILL escalation inside stop() after the SIGTERM budget
+ * elapsed. Mirrors killTree's internal delay so the two paths stay consistent.
+ */
+const KILL_GRACE_MS = 2_000
+/**
+ * Marker injected by `dsh web` into the shell HTML (the documented
+ * client-modules boot contract). Its presence in a 2xx response is the
+ * health probe's identity check: only the real runtime serves it.
+ */
+const DSH_BOOT_MARKER = '__DSH_BOOT__'
 
 export class HarnessProcess extends EventEmitter<HarnessProcessEvents> {
   private readonly options: Omit<Required<HarnessProcessOptions>, 'port' | 'runtime' | 'dshBin'> & {
@@ -220,7 +232,15 @@ export class HarnessProcess extends EventEmitter<HarnessProcessEvents> {
       const timer = setTimeout(() => controller.abort(), this.options.healthProbeTimeoutMs)
       try {
         const res = await fetch(url, { signal: controller.signal })
-        return res.ok || res.status >= 400 // any HTTP answer means the server is up
+        // Identity check, not just liveness: a ready dsh answers 2xx AND its
+        // shell HTML carries the boot marker that only `dsh web` injects.
+        // The old check accepted ANY HTTP answer including >=400, so a foreign
+        // service squatting on the port was misidentified as the runtime.
+        // False negatives here merely keep polling until the startup timeout,
+        // so tightening is safe.
+        if (!res.ok) return false
+        const body = await res.text()
+        return body.includes(DSH_BOOT_MARKER)
       } finally {
         clearTimeout(timer)
       }
@@ -315,8 +335,16 @@ export class HarnessProcess extends EventEmitter<HarnessProcessEvents> {
     }
   }
 
-  /** Stop the child process, killing the full process tree. */
-  async stop(timeoutMs = 5_000): Promise<void> {
+  /**
+   * Stop the child process, killing the full process tree.
+   *
+   * Returns a {@link StopOutcome} so callers can distinguish a verified death
+   * from a survivor (plan v1.4 residual gap): on `'timeout'` the status moves
+   * to `error` and `onStopped(false)` records an unexpected exit, keeping the
+   * pid in the ledger for next-launch reaping — the old code reported clean
+   * unconditionally, which let an unkillable tree escape reaping forever.
+   */
+  async stop(timeoutMs = 5_000): Promise<StopOutcome> {
     // Disarm auto-restart BEFORE killing: handleExit fires during stop and
     // must not schedule a restart (user asked us to stop).
     this.autoRestartArmed = false
@@ -326,17 +354,64 @@ export class HarnessProcess extends EventEmitter<HarnessProcessEvents> {
     }
     const child = this.child
     if (!child || child.exitCode !== null) {
-      this.setStatus('stopped')
-      return
+      // Adopted runtimes land here too (never owned as a child): nothing to
+      // kill, and the ledger's adopted flag keeps them reusable next launch.
+      if (this.status.state !== 'stopped') {
+        this.setStatus('stopped')
+        this.options.onStopped?.(true)
+      }
+      return 'not-running'
     }
+    const pid = child.pid
     this.setStatus('stopping')
-    const exited = new Promise<void>((resolve) => {
-      child.once('exit', () => resolve())
+    const exited = new Promise<boolean>((resolve) => {
+      child.once('exit', () => resolve(true))
     })
+    const sleep = (ms: number) => new Promise<false>((resolve) => setTimeout(resolve, ms))
     this.killTree(child)
-    await Promise.race([exited, new Promise((r) => setTimeout(r, timeoutMs))])
-    this.setStatus('stopped')
-    this.options.onStopped?.(true)
+    let died = await Promise.race([exited, sleep(timeoutMs)])
+    if (!died && pid) {
+      // SIGTERM budget elapsed → escalate NOW. killTree's internal SIGKILL
+      // timer is .unref()'d, so it would never fire if the app quits first;
+      // delivering it synchronously here is what makes the quit path able to
+      // guarantee "no orphan outlives the app" (G1 residual).
+      this.escalateKill(pid)
+      died = await Promise.race([exited, sleep(KILL_GRACE_MS)])
+    }
+    if (!died) {
+      // Survivor: do NOT report clean. The ledger must treat this as an
+      // unexpected exit so reapBeforeSpawn() triple-checks and reaps the tree
+      // on the next launch instead of trusting a "clean stop" that never was.
+      this.setStatus('error', {
+        lastError: `dsh (pid ${pid ?? '?'}) survived SIGTERM+SIGKILL; recorded for reaping on next launch`
+      })
+      this.options.onStopped?.(false)
+      return 'timeout'
+    }
+    // handleExit already settled 'stopped' via the exit event; settle here too
+    // for the edge where the event was coalesced, without double-reporting.
+    if (this.status.state === 'stopping') {
+      this.setStatus('stopped')
+      this.options.onStopped?.(true)
+    }
+    return 'exited'
+  }
+
+  /**
+   * Immediate group SIGKILL, used by stop() when the SIGTERM budget elapses.
+   * Falls back to killing just the direct child when the group is gone.
+   */
+  private escalateKill(pid: number): void {
+    if (process.platform === 'win32') return // taskkill /T /F already forceful
+    try {
+      process.kill(-pid, 'SIGKILL')
+    } catch {
+      try {
+        this.child?.kill('SIGKILL')
+      } catch {
+        /* already gone */
+      }
+    }
   }
 
   /** Restart: stop the current process (if any) and start a fresh one. */

@@ -2,7 +2,7 @@
   "$comment": "Pinned self-contained runtime for the packaged .app (ADR-002 / Task 2.3). The desktop app bundles these exact versions so it runs without any dsh/Node on the user's PATH. Dev builds (pnpm dev) still use PATH dsh; only `pnpm package` consumes this manifest. prepare-runtime.mjs verifies the installed dsh matches the pinned major.minor and warns on drift.",
   "dsh": {
     "package": "@deepseek-ai/dsh",
-    "version": "0.1.0-rc.7"
+    "version": "0.1.1-rc.2"
   },
   "node": {
     "version": "22.23.1",
