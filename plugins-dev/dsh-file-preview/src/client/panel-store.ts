@@ -57,6 +57,18 @@ export function closeFile(id: string): void {
 export function activateFile(id: string): void { state.activeId = id; emit() }
 export function refreshFile(id: string): void {
   const t = state.tabs.find((x) => x.id === id)
-  if (t) { t.openedAt = Date.now() }
+  if (t) {
+    t.openedAt = Date.now()
+    t.externallyUpdated = true
+  }
   emit()
+}
+
+/** 用户已注意到外部修改横幅（切换标签或点关闭）。 */
+export function clearExternalUpdate(id: string): void {
+  const t = state.tabs.find((x) => x.id === id)
+  if (t?.externallyUpdated) {
+    t.externallyUpdated = false
+    emit()
+  }
 }

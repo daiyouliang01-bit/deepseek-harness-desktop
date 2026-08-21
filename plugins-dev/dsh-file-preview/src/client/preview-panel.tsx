@@ -8,7 +8,7 @@ import type { CSSProperties, ReactElement } from 'react'
 import { fpCall } from './api.ts'
 import { ContentView } from './renderers.tsx'
 import { FileTree } from './file-tree.tsx'
-import { activateFile, closeFile, closePanel, refreshFile, usePanelState } from './panel-store.ts'
+import { activateFile, closeFile, closePanel, refreshFile, usePanelState, clearExternalUpdate } from './panel-store.ts'
 import type { PanelStore } from './panel-store.ts'
 
 const PANEL_WIDTH = 480
@@ -47,6 +47,12 @@ export function PreviewPanel({ store }: { store: PanelStore }): ReactElement {
         <button onClick={closePanel} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 14, opacity: 0.7 }}>✕</button>
       </div>
       {/* toolbar */}
+      {active?.externallyUpdated && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', borderBottom: '1px solid rgba(255,180,60,0.35)', background: 'rgba(255,180,60,0.12)', flexShrink: 0, fontSize: 12 }}>
+          <span style={{ color: '#ffb43c' }}>⟳ 文件已被外部修改，预览已自动更新</span>
+          <button onClick={() => clearExternalUpdate(active.id)} style={{ ...toolBtn, border: 0 }}>知道了</button>
+        </div>
+      )}
       {active && (
         <div style={{ display: 'flex', gap: 6, padding: '4px 8px', borderBottom: '1px solid var(--color-border-subtle, rgba(255,255,255,0.08))', flexShrink: 0, fontSize: 12 }}>
           <button onClick={openExternal} style={toolBtn}>用默认应用打开</button>

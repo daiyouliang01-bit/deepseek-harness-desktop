@@ -46,12 +46,38 @@ describe('TaskMonitor', () => {
     sessions = [summary('a', false, 'Refactor')]
     await monitor.poll()
     expect(backend.notifications).toHaveLength(1)
-    expect(backend.notifications[0].title).toBe('任务已结束')
+    expect(backend.notifications[0].title).toBe('任务完成')
     expect(backend.notifications[0].body).toBe('Refactor')
     expect(typeof backend.notifications[0].onClick).toBe('function')
     backend.notifications[0].onClick?.()
     expect(activated).toEqual(['a'])
     expect(backend.badges.at(-1)).toBe(0)
+  })
+
+  it('says 任务失败 when the task sidecar reports failure', async () => {
+    const backend = makeBackend()
+    let sessions = [summary('a', true, 'Deploy')]
+    const lister = {
+      list: vi.fn().mockImplementation(async () => sessions),
+      taskStatus: vi.fn().mockResolvedValue({ phase: 'failed' })
+    }
+    const monitor = new TaskMonitor(backend as never, lister)
+    await monitor.poll()
+    sessions = [summary('a', false, 'Deploy')]
+    await monitor.poll()
+    expect(backend.notifications[0].title).toBe('任务失败')
+    expect(backend.notifications[0].body).toBe('✗ Deploy')
+  })
+
+  it('keeps neutral wording when no task sidecar is known', async () => {
+    const backend = makeBackend()
+    let sessions = [summary('a', true)]
+    const lister = { list: vi.fn().mockImplementation(async () => sessions) }
+    const monitor = new TaskMonitor(backend as never, lister)
+    await monitor.poll()
+    sessions = [summary('a', false)]
+    await monitor.poll()
+    expect(backend.notifications[0].title).toBe('任务完成')
   })
 
   it('falls back to a short session id when the session has no title', async () => {

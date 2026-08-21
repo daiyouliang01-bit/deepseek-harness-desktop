@@ -22,8 +22,19 @@ export interface TaskMonitorBackend {
   isSupported: () => boolean
 }
 
+export interface TaskStatus {
+  phase?: string
+  verifyOk?: boolean
+}
+
 export interface TaskLister {
   list: () => Promise<SessionSummary[]>
+  /**
+   * Optional task-sidecar lookup (.dsh/tasks/<id>.json). When it reports
+   * phase 'failed' or lastVerify all-failed, the notification says 任务失败
+   * instead of the neutral 任务已结束; null/unknown keeps neutral wording.
+   */
+  taskStatus?: (sessionId: string) => Promise<TaskStatus | null>
 }
 
 export const DEFAULT_TASK_POLL_MS = 10_000
@@ -79,7 +90,10 @@ export class TaskMonitor {
         for (const [sessionId, title] of this.running) {
           if (now.has(sessionId)) continue
           const label = title ?? `会话 ${sessionId.slice(0, 8)}`
-          this.backend.notify('任务已结束', label, () => this.onActivate?.(sessionId))
+          const status = this.lister.taskStatus ? await this.lister.taskStatus(sessionId).catch(() => null) : null
+          const failed = status?.phase === 'failed' || status?.verifyOk === false
+          const body = `${failed ? '✗ ' : ''}${label}`
+          this.backend.notify(failed ? '任务失败' : '任务完成', body, () => this.onActivate?.(sessionId))
         }
       }
       this.running = now

@@ -1,6 +1,6 @@
 // src/client/tabs.ts
 export type TabKind = 'md' | 'code' | 'pdf' | 'image' | 'html' | 'docx' | 'binary' | 'txt'
-export interface PreviewTab { id: string; path: string; name: string; kind: TabKind; openedAt: number }
+export interface PreviewTab { id: string; path: string; name: string; kind: TabKind; openedAt: number; /** watcher 检测到外部修改后置位，用户看到横幅后清除 */ externallyUpdated?: boolean }
 
 let seq = 0
 function nextId(): string { return `tab-${Date.now()}-${seq++}` }

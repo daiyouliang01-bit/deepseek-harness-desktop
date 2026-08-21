@@ -407,6 +407,11 @@ const taskMonitor = new TaskMonitor(
       const adapter = ensureSessionAdapter()
       if (!adapter) return []
       return adapter.list()
+    },
+    // .dsh/tasks/<id>.json sidecar: phase 'failed' / lastVerify all-no → 失败
+    taskStatus: async (sessionId) => {
+      const adapter = ensureSessionAdapter()
+      return adapter?.readTaskStatus(sessionId) ?? null
     }
   }
 )
