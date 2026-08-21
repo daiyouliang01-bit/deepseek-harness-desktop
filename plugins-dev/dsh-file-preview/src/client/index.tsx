@@ -11,11 +11,14 @@ import { closeDrawer, openFile, toggleDrawer, usePanelState } from './panel-stor
 import { PreviewDrawer, PreviewPanel } from './preview-panel.tsx'
 import { kindForPath } from './tabs.ts'
 import { type GlobalSlotProps, useSyncWorkspaceRoot } from './workspace-root.ts'
+import { startFileWatcher, stopFileWatcher } from './watcher.ts'
 
 export const inject = ['slots']
 
 export function apply(ctx: Context): () => void {
   const disposers: Array<() => void> = []
+  startFileWatcher()
+  disposers.push(() => stopFileWatcher())
 
   const handleOpenFromTree = (p: string): void => {
     fpCall<{ exists: boolean; isDir: boolean }>('stat', { path: p }).then((s) => {

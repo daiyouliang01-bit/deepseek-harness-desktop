@@ -29,6 +29,7 @@ import { ensureCodingAgentLinked } from '../runtime/coding-agent-installer'
 import { ensureDesktopChromeLinked } from '../runtime/desktop-chrome-installer'
 import { PinGate } from '../runtime/pin-gate'
 import { applySidebarTrustPatch } from '../runtime/sidebar-trust-patch'
+import { recoverStaleCredentialLocks } from '../runtime/credential-lock-recovery'
 import {
   defaultDesktopHome,
   findProfileFileDepsIntoSharedHome,
@@ -396,12 +397,10 @@ const taskMonitor = new TaskMonitor(
   {
     isSupported: () => Notification.isSupported(),
     notify: (title, body, onClick) => notifier.notify(title, body, onClick),
-    setBadge: (count) => {
-      // Dock badge is macOS-only; other platforms just skip for now.
-      // setBadge takes text ('' clears) — setBadgeCount is absent from this
-      // Electron version's Dock typings.
-      app.dock?.setBadge(count > 0 ? String(count) : '')
-    }
+    // Dock badge intentionally disabled (user preference): a lingering count
+    // reads as unread mail rather than "work in flight". Completion
+    // notifications remain the attention signal.
+    setBadge: () => undefined
   },
   {
     list: async () => {
@@ -551,6 +550,10 @@ async function startRuntime(): Promise<RuntimeStatus> {
     // Task 7.2: link the bundled phone-sync plugin into the web profile so the
     // spawned dsh can load it (idempotent; failure only disables phone access).
     const dshHome = DESKTOP_DSH_HOME
+    const recoveredCredentialLocks = recoverStaleCredentialLocks(dshHome)
+    for (const lockPath of recoveredCredentialLocks) {
+      logLine('stdout', `[credentials] moved stale lock ${lockPath}`)
+    }
     const linked = ensurePhoneSyncLinked(dshHome, join(__dirname, '../..'))
     if (linked) {
       logLine('stdout', `[phone-sync] linked ${linked}`)

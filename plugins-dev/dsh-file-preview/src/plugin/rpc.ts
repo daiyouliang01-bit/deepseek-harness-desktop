@@ -33,6 +33,19 @@ export async function readText(p: string, maxBytes = DEFAULT_MAX): Promise<{ tex
   return { text: buf.subarray(0, maxBytes).toString('utf-8'), truncated, mtime: st.mtimeMs }
 }
 
+/** Batch mtime probe for the client-side auto-refresh watcher. */
+export async function statMany(paths: string[]): Promise<Array<{ path: string; mtime: number; exists: boolean }>> {
+  return Promise.all(paths.map(async (p) => {
+    try {
+      const file = assertAllowedPath(p)
+      const st = await stat(file)
+      return { path: p, mtime: st.mtimeMs, exists: true }
+    } catch {
+      return { path: p, mtime: 0, exists: false }
+    }
+  }))
+}
+
 export async function statPath(p: string): Promise<StatResult> {
   try {
     const file = assertAllowedPath(p)
@@ -75,6 +88,7 @@ export async function dispatchFpCall(
     case 'listDir': return listDir(path)
     case 'readText': return readText(path, typeof body.maxBytes === 'number' ? body.maxBytes : undefined)
     case 'stat': return statPath(path)
+    case 'statMany': return statMany(Array.isArray(body.paths) ? body.paths.map(String) : [])
     case 'docxToHtml': return docxToHtml(path)
     case 'openInApp': return openInApp(path)
     case 'pickFile': return pickFile()
