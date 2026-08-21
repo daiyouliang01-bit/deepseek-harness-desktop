@@ -16,9 +16,14 @@ test('closing the window keeps the app alive (hide to tray)', async () => {
     await page.close({ runBeforeUnload: false })
     await new Promise((r) => setTimeout(r, 500))
     // The app is still running: evaluating the main process works.
-    const windows = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)
-    // Hidden but alive — window count may be 1 (hidden) on some platforms.
-    expect(windows).toBeGreaterThanOrEqual(0)
+    const state = await app.evaluate(({ BrowserWindow }) => {
+      const wins = BrowserWindow.getAllWindows()
+      return { count: wins.length, visible: wins.some((w) => w.isVisible()) }
+    })
+    // Hide-to-tray contract: the window still exists but is NOT visible, and
+    // the process is alive (evaluate above succeeded).
+    expect(state.count).toBeGreaterThan(0)
+    expect(state.visible).toBe(false)
   } finally {
     await app.close().catch(() => undefined)
   }

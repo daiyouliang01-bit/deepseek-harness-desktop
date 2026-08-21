@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process'
+import { resolve } from 'node:path'
 import { _electron as electron, test, type ElectronApplication } from '@playwright/test'
 
 /**
@@ -21,8 +22,11 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, message: string)
 }
 
 export function killOrphans(): void {
+  // Scope to THIS checkout's built main — a bare `pkill -f out/main/index.js`
+  // would also take down every other checkout's dev Electron processes.
+  const repoMain = resolve(__dirname, '../../../out/main/index.js')
   try {
-    execSync('pkill -9 -f "out/main/index.js"', { stdio: 'ignore' })
+    execSync(`pkill -9 -f ${JSON.stringify(repoMain)}`, { stdio: 'ignore' })
   } catch {
     /* no match — fine */
   }
