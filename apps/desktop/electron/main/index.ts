@@ -15,6 +15,7 @@ import { StreamBridge } from '../adapter/stream-bridge'
 import { SessionStore } from '@dshd/session-store'
 import { buildAppMenuTemplate } from '../menu'
 import { RuntimeNotifier } from '../notifications'
+import { TaskMonitor } from '../tasks/task-monitor'
 import { HarnessProcess } from '../runtime/harness-process'
 import { findRuntime } from '../runtime/dsh-bin'
 import type { RuntimeStatus } from '../runtime/runtime-types'
@@ -92,9 +93,20 @@ let isQuitting = false
 
 const notifier = new RuntimeNotifier({
   isSupported: () => Notification.isSupported(),
-  show: (title, body) => {
+  show: (title, body, onClick) => {
     if (!Notification.isSupported()) return
-    new Notification({ title, body }).show()
+    const n = new Notification({ title, body })
+    if (onClick) n.on('click', () => {
+      onClick()
+      // Clicking a notification is an explicit attention request: surface the
+      // window even when close-to-tray would have kept it hidden.
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.show()
+        mainWindow.focus()
+      }
+    })
+    n.show()
   }
 })
 
@@ -372,6 +384,55 @@ const runtime = new HarnessProcess({
 let sessionAdapter: SessionAdapter | null = null
 let streamBridge: StreamBridge | null = null
 
+// --- task center (P1 slice 1): completion notifications + dock badge ---
+const taskMonitor = new TaskMonitor(
+  {
+    isSupported: () => Notification.isSupported(),
+    notify: (title, body, onClick) => notifier.notify(title, body, onClick),
+    setBadge: (count) => {
+      // Dock badge is macOS-only; other platforms just skip for now.
+      // setBadge takes text ('' clears) — setBadgeCount is absent from this
+      // Electron version's Dock typings.
+      app.dock?.setBadge(count > 0 ? String(count) : '')
+    }
+  },
+  {
+    list: async () => {
+      const adapter = ensureSessionAdapter()
+      if (!adapter) return []
+      return adapter.list()
+    }
+  }
+)
+
+// Approval / question prompts that arrive while the user is away: surface a
+// clickable notification per request id (deduped — the live stream replays).
+const seenPrompts = new Set<string>()
+function notifyAttentionEvents(events: Array<{ type: string; id?: string; permission?: string }>): void {
+  for (const ev of events) {
+    if (ev.type !== 'approval-request' && ev.type !== 'question') continue
+    if (!ev.id || seenPrompts.has(ev.id)) continue
+    seenPrompts.add(ev.id)
+    // Bounded memory: once the set grows past 500, drop the oldest half.
+    if (seenPrompts.size > 500) {
+      let n = 250
+      for (const id of seenPrompts) {
+        if (n-- <= 0) break
+        seenPrompts.delete(id)
+      }
+    }
+    const label = ev.type === 'approval-request' ? '需要批准' : '需要回答'
+    const detail = ev.permission ?? '子任务在等待你的输入'
+    notifier.notify(label, detail, () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.show()
+        mainWindow.focus()
+      }
+    })
+  }
+}
+
 function ensureSessionAdapter(): SessionAdapter | null {
   const status = runtime.getStatus()
   if (status.state !== 'ready' || !status.ready) return null
@@ -386,7 +447,10 @@ function ensureSessionAdapter(): SessionAdapter | null {
   // Start the live mux stream → push mapped protocol events to the renderer.
   streamBridge = new StreamBridge({
     client,
-    onEvents: (events) => mainWindow?.webContents.send('agent:event', events),
+    onEvents: (events) => {
+      mainWindow?.webContents.send('agent:event', events)
+      notifyAttentionEvents(events)
+    },
     onClose: (err) => mainWindow?.webContents.send('agent:stream-state', { running: false, error: err?.message })
   })
   void streamBridge.start()
@@ -452,6 +516,7 @@ runtime.on('statusChange', (status: RuntimeStatus) => {
     sessionAdapter = null // runtime gone → adapter must rebuild on next ready
     stopStreamBridge()
     stopPinGate()
+    taskMonitor.stop() // no runtime → nothing to watch; badge cleared
     if (uiLoaded) {
       // Runtime died while the Web UI was loaded → go back to the shell
       // renderer (loading/recovery screen).
@@ -459,6 +524,7 @@ runtime.on('statusChange', (status: RuntimeStatus) => {
       loadRendererScreen()
     }
   }
+  if (status.state === 'ready') taskMonitor.start()
   pushStatus()
 })
 
