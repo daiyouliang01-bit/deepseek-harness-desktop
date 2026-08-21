@@ -675,7 +675,16 @@ function createWindow(): void {
     }
   })
 
+  // Auto-show ONCE. ready-to-show re-fires after every navigation (shell →
+  // official UI load), and a re-show would pop the window back open right
+  // after the user closed it to tray while a load was in flight. The same
+  // race exists on FIRST show: closing before the renderer finished painting
+  // (hide-to-tray) must not be undone by the pending ready-to-show.
+  let autoShown = false
+  let closedToTray = false
   mainWindow.on('ready-to-show', () => {
+    if (autoShown || closedToTray) return
+    autoShown = true
     if (!startHidden) mainWindow?.show()
     if (saved.maximized) mainWindow?.maximize()
   })
@@ -697,6 +706,7 @@ function createWindow(): void {
   mainWindow.on('close', (event) => {
     persistWindowBounds()
     if (!isQuitting) {
+      closedToTray = true
       event.preventDefault()
       mainWindow?.hide()
     }

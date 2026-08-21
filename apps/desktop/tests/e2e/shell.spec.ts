@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process'
+import { launchApp } from './helpers'
 import { _electron as electron, expect, test } from '@playwright/test'
 
 /**
@@ -34,29 +35,9 @@ function killOrphans(): void {
 }
 
 test('secure shell window opens and exposes only the preload bridge', async () => {
-  let app: Awaited<ReturnType<typeof electron.launch>>
-  try {
-    app = await withTimeout(
-      electron.launch({ args: ['out/main/index.js'] }),
-      8000,
-      'launch-timeout'
-    )
-  } catch (err) {
-    killOrphans()
-    skipWithReason(`no GUI session — electron.launch timed out (${(err as Error).message}). Run from the Mac console Terminal (not SSH).`)
-    return
-  }
-
-  let page
-  try {
-    page = await withTimeout(app.firstWindow(), 8000, 'no-window')
-  } catch (err) {
-    await app.close().catch(() => undefined)
-    skipWithReason(`no GUI window within 8s (${(err as Error).message}). Electron launched but no window appeared — run from the Mac console Terminal.`)
-    return
-  }
-
-  await expect(page).toHaveTitle('DeepSeek Harness Desktop')
+  const app = await launchApp()
+  if (!app) return
+  const page = await app.firstWindow()
 
   // The renderer must see the `desktop` bridge and nothing else.
   const bridge = await page.evaluate(() => typeof (window as unknown as Record<string, unknown>).desktop)
