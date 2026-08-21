@@ -19,4 +19,9 @@ describe('desktop-tools.patch.yml coding-agent row', () => {
     expect(text).toContain("- id: phone-sync")
     expect(text).toContain("name: '@dshd/phone-sync'")
   })
+
+  it('inserts desktop-only chrome (not shared with :3080)', () => {
+    expect(text).toContain("- id: desktop-chrome")
+    expect(text).toContain("name: '@dshd/desktop-chrome'")
+  })
 })

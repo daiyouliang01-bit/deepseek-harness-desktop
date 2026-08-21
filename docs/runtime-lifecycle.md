@@ -101,7 +101,7 @@ app 启动
 
 - `detectCoexistingInstances()`：**只报告，不杀**（击杀仅限台账内 pid）。
 - 按应用签名分类：`app-orphan`（应用遗留，询问回收）vs `manual`（手动实例，警告）。
-- **隔离模式**：以独立 `DSH_HOME`（如 `<userData>/dsh-home`）spawn，与手动实例物理隔离。会话数据与手动实例不互通（有意取舍）。
+- **隔离是默认**：桌面端默认 `DSH_HOME=~/.dsh-desktop`，与手动 `dsh web`（`~/.dsh` / :3080）物理隔离。启动时会把指向 `~/.dsh` 的泄漏 symlink 拷一份再断开。会话数据与 3080 不互通（有意取舍）。禁止把桌面数据目录设回 `~/.dsh`。
 
 ## 10. 平台差异（R18）
 

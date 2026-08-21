@@ -66,3 +66,5 @@
 - insert:
     - id: coding-agent
       name: '@dshd/coding-agent-host'
+    - id: desktop-chrome
+      name: '@dshd/desktop-chrome'

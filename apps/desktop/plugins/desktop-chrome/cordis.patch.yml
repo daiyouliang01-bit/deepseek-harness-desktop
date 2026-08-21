@@ -1,0 +1,5 @@
+# Desktop-only chrome. Applied via desktop-tools.patch.yml --patch,
+# which the :3080 standalone `dsh web` never receives.
+- insert:
+    - id: desktop-chrome
+      name: '@dshd/desktop-chrome'

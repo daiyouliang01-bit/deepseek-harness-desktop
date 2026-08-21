@@ -74,7 +74,7 @@ function DesktopSection({ tokens }: { tokens: Tokens }): React.JSX.Element {
   )
 }
 
-/** 数据目录 — 多实例隔离：与 Web GUI(3080) 分开数据避免会话日志互相写坏。 */
+/** 数据目录 — 写死与 3080 隔离：默认 ~/.dsh-desktop，禁止指回 ~/.dsh。 */
 function DataDirSection({ tokens }: { tokens: Tokens }): React.JSX.Element {
   const { colors, space, radius, font } = tokens
   const [current, setCurrent] = useState<string | null>(null)
@@ -114,11 +114,10 @@ function DataDirSection({ tokens }: { tokens: Tokens }): React.JSX.Element {
       <h3 style={{ color: colors.text, fontSize: font.sizeLg, margin: `0 0 ${space.sm}px` }}>数据目录</h3>
       <p style={{ color: colors.textMuted, fontSize: font.sizeSm, margin: `0 0 ${space.sm}px`, lineHeight: 1.6 }}>
         当前：<code style={{ fontFamily: font.mono, color: colors.text }}>{current ?? '…'}</code>
-        {defaultHome && current !== defaultHome && (
-          <span style={{ display: 'block', marginTop: 4 }}>默认（共享 Web GUI）：{defaultHome}</span>
-        )}
-        {current === defaultHome && (
-          <span style={{ display: 'block', marginTop: 4 }}>与 Web GUI（3080）共享同一数据目录。同时运行两个实例会互相写坏会话日志（历史打不开）。</span>
+        {defaultHome && (
+          <span style={{ display: 'block', marginTop: 4 }}>
+            默认独立目录：{defaultHome}。与 3080（~/.dsh）物理隔离，桌面改动不会同步过去。
+          </span>
         )}
       </p>
       <div style={{ display: 'flex', gap: space.sm }}>

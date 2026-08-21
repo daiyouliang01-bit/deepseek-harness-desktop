@@ -1,7 +1,6 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, shell, Tray } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { homedir } from 'node:os'
 import { randomBytes } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { isAllowedNavigation } from '../navigation-guard'
@@ -24,8 +23,18 @@ import { ensurePhoneSyncLinked } from '../runtime/phone-sync-installer'
 import { ensureCommunityLinksLinked } from '../runtime/community-links-installer'
 import { ensurePhoneSettingsLinked } from '../runtime/phone-settings-installer'
 import { ensureCodingAgentLinked } from '../runtime/coding-agent-installer'
+import { ensureDesktopChromeLinked } from '../runtime/desktop-chrome-installer'
 import { PinGate } from '../runtime/pin-gate'
 import { applySidebarTrustPatch } from '../runtime/sidebar-trust-patch'
+import {
+  defaultDesktopHome,
+  findProfileFileDepsIntoSharedHome,
+  isSharedWebHome,
+  ensureDesktopLocaleZh,
+  materializeLeakedLinks,
+  resolveDesktopDshHome,
+  sharedWebHome
+} from '../runtime/dsh-home-isolation'
 import { GlobalShortcutManager } from '../shortcuts'
 import { buildTrayMenuTemplate } from '../tray'
 import { TRAY_ICON_DATA_URL } from '../tray-icon'
@@ -249,24 +258,33 @@ const ledger = new LedgerIntegration({
 const PREFERRED_PORT = Number(process.env['DSH_DESKTOP_PORT'] ?? '') || 35880
 
 /**
- * Resolve the dsh data directory for the desktop shell. Defaults to the
- * standard `~/.dsh` (shared with `dsh web` / the 3080 GUI), but can be
- * pointed at a dedicated directory via the settings page (userData/config/
- * settings.json → dshHome) so a second GUI instance never writes the same
- * session logs as the first — the multi-instance seq-gap corruption fix.
+ * Resolve the dsh data directory for the desktop shell.
+ *
+ * HARD RULE: never `~/.dsh`. That directory belongs to standalone `dsh web`
+ * on :3080. Desktop default is `~/.dsh-desktop`. A configured / env value
+ * that equals `~/.dsh` is ignored. Desktop changes are never synced back to
+ * :3080 unless the user explicitly asks.
  */
 function resolveDshHome(): string {
+  let configured: string | undefined
   try {
-    const configured = readFileSync(join(app.getPath('userData'), 'config', 'settings.json'), 'utf8')
-    const parsed = JSON.parse(configured) as { dshHome?: unknown }
-    if (typeof parsed.dshHome === 'string' && parsed.dshHome.trim() !== '') return parsed.dshHome.trim()
+    const raw = readFileSync(join(app.getPath('userData'), 'config', 'settings.json'), 'utf8')
+    const parsed = JSON.parse(raw) as { dshHome?: unknown }
+    if (typeof parsed.dshHome === 'string') configured = parsed.dshHome
   } catch {
     /* missing/corrupt settings → default */
   }
-  return process.env['DSH_HOME'] || join(homedir(), '.dsh')
+  return resolveDesktopDshHome({
+    configured,
+    envHome: process.env['DSH_HOME']
+  })
 }
 
 const DESKTOP_DSH_HOME = resolveDshHome()
+const leaked = materializeLeakedLinks(DESKTOP_DSH_HOME, sharedWebHome())
+if (leaked.length > 0) {
+  console.log(`[isolation] copied then disconnected leaked links: ${leaked.join(', ')}`)
+}
 
 // PIN gate: loopback reverse proxy in front of dsh web, exposed via the
 // tunnel so phones must enter a PIN before reaching the harness.
@@ -318,10 +336,24 @@ const TRUSTED_HOSTS = (process.env['DSH_TRUSTED_HOSTS'] ?? '')
   .map((s) => s.trim())
   .filter(Boolean)
 
+// Isolation guard: the desktop profile must not depend on files inside the
+// :3080 data dir (~/.dsh). A leaked `file:` dep would re-couple the two
+// homes (plugin crashes took both down once); warn loudly if it happens.
+const leakedFileDeps = findProfileFileDepsIntoSharedHome(
+  join(DESKTOP_DSH_HOME, 'profiles', 'web'),
+  sharedWebHome()
+)
+if (leakedFileDeps.length > 0) {
+  logLine('stderr', `[isolation] 隔离违规:桌面 profile 的 file: 依赖指向 ~/.dsh: ${leakedFileDeps.join(', ')}`)
+}
+
 const runtime = new HarnessProcess({
   runtime: runtimeDescriptor,
   topLevelArgs: ['--patch', desktopPatchPath()],
-  extraArgs: TRUSTED_HOSTS.length > 0 ? TRUSTED_HOSTS.flatMap((h) => ['--trusted-host', h]) : [],
+  extraArgs: [
+    '--no-open',
+    ...(TRUSTED_HOSTS.length > 0 ? TRUSTED_HOSTS.flatMap((h) => ['--trusted-host', h]) : [])
+  ],
   port: PREFERRED_PORT,
   autoRestart: true,
   // Dedicated data directory when configured: the child dsh must read/write
@@ -436,6 +468,7 @@ async function startRuntime(): Promise<RuntimeStatus> {
     // so publish the gate port + shared token BEFORE the runtime spawns.
     process.env['DSH_PIN_GATE_PORT'] = String(PIN_GATE_PORT)
     ensureCompanionToken()
+    ensureDesktopLocaleZh(DESKTOP_DSH_HOME)
 
     // Task 7.2: link the bundled phone-sync plugin into the web profile so the
     // spawned dsh can load it (idempotent; failure only disables phone access).
@@ -464,6 +497,12 @@ async function startRuntime(): Promise<RuntimeStatus> {
     const linkedCodingAgent = ensureCodingAgentLinked(dshHome, join(__dirname, '../..'), process.resourcesPath)
     if (linkedCodingAgent) {
       logLine('stdout', `[coding-agent] linked ${linkedCodingAgent}`)
+    }
+
+    // Desktop-only composer/session chrome. Linked into ~/.dsh-desktop only.
+    const linkedDesktopChrome = ensureDesktopChromeLinked(dshHome, join(__dirname, '../..'), process.resourcesPath)
+    if (linkedDesktopChrome) {
+      logLine('stdout', `[desktop-chrome] linked ${linkedDesktopChrome}`)
     }
 
     // Task 7.x: patch better-sidebar's /sidebar fence so it honors
@@ -879,10 +918,20 @@ ipcMain.handle('crash-evidence:get', () => {
 })
 
 // --- data-directory settings (multi-instance isolation) ---
-ipcMain.handle('settings:get-dsh-home', () => ({ ok: true, value: DESKTOP_DSH_HOME, default: join(homedir(), '.dsh') }))
+ipcMain.handle('settings:get-dsh-home', () => ({
+  ok: true,
+  value: DESKTOP_DSH_HOME,
+  default: defaultDesktopHome()
+}))
 ipcMain.handle('settings:set-dsh-home', (_e, value: string) => {
   const next = typeof value === 'string' ? value.trim() : ''
   if (next !== '' && !next.startsWith('/')) return { ok: false, error: '必须是绝对路径' }
+  if (next !== '' && isSharedWebHome(next)) {
+    return {
+      ok: false,
+      error: '禁止使用 ~/.dsh：那是 3080 独立 web 的目录。桌面端必须用独立目录（默认 ~/.dsh-desktop）。'
+    }
+  }
   try {
     mkdirSync(join(app.getPath('userData'), 'config'), { recursive: true })
     const file = join(app.getPath('userData'), 'config', 'settings.json')
@@ -932,26 +981,47 @@ app.on('window-all-closed', () => {
   /* no-op: tray resident */
 })
 
-// Clean shutdown: kill the child process tree on quit.
-app.on('before-quit', () => {
+// Clean shutdown: stop the runtime and WAIT for it before quitting.
+// Plan v1.4 residual gap — the previous fire-and-forget `void runtime.stop()`
+// raced Electron's exit, so a dsh that ignored SIGTERM outlived the app and
+// its SIGKILL escalation (an .unref()'d timer) was never delivered.
+let stopAttempted = false
+app.on('before-quit', (event) => {
   isQuitting = true
   shortcutManager.dispose()
-  crashEvidence.markCleanExit()
-  void runtime.stop()
+  // Second pass (after our own app.quit() below) or nothing owned to stop:
+  // an adopted instance is deliberately left alive for reuse next launch.
+  if (stopAttempted || !runtime.isRunning()) {
+    if (!stopAttempted) crashEvidence.markCleanExit()
+    return // allow quit to proceed
+  }
+  stopAttempted = true
+  event.preventDefault()
+  void runtime
+    .stop()
+    .catch(() => undefined)
+    .finally(() => {
+      // Mark clean ONLY when the tree is verifiably gone. A timed-out
+      // survivor leaves status at 'error' and its ledger entry unexpected,
+      // so reapBeforeSpawn() reaps it on the next launch.
+      if (runtime.getStatus().state !== 'error') crashEvidence.markCleanExit()
+      app.quit()
+    })
 })
 
-// will-quit: belt-and-braces for paths where before-quit's async stop may not
-// have settled (plan v1.4 R7 — the ledger clean marker is written synchronously
-// inside recordCleanStop via saveLedger).
+// will-quit: belt-and-braces marker for paths where before-quit's async stop
+// may not have settled (plan v1.4 R7 — the ledger clean marker is written
+// synchronously inside recordCleanStop via saveLedger).
 app.on('will-quit', () => {
   isQuitting = true
 })
 
-// SIGTERM/SIGINT (e.g. `kill <pid>`, system shutdown on Linux): give the
-// child a clean stop instead of leaving it orphaned (plan v1.4 G1).
+// SIGTERM/SIGINT (e.g. `kill <pid>`, system shutdown on Linux): route through
+// the normal quit path so the deterministic stop-and-wait above applies here
+// too (plan v1.4 G1).
 process.on('SIGTERM', () => {
-  void runtime.stop().finally(() => app.quit())
+  app.quit()
 })
 process.on('SIGINT', () => {
-  void runtime.stop().finally(() => app.quit())
+  app.quit()
 })
