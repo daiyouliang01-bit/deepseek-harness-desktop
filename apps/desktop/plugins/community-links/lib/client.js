@@ -55,6 +55,8 @@ window.__ModuleLoader__.load({
       textDecoration: 'none',
       borderRadius: 6,
       cursor: 'pointer',
+      minHeight: 44,
+      boxSizing: 'border-box',
     };
 
     function card(link) {
@@ -83,8 +85,10 @@ window.__ModuleLoader__.load({
           rel: 'noreferrer',
           style: FOOTER,
           title: '社区资源：Awesome DSH / 橙皮书',
+          'aria-label': '社区',
         },
-        '🌐 社区',
+        h('span', { 'aria-hidden': 'true' }, '🌐'),
+        h('span', { className: 'dshd-community-label' }, '社区'),
       );
     }
 

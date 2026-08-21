@@ -438,6 +438,16 @@ window.__ModuleLoader__.load({
       ]);
     }
 
+    function shouldPinSidebar() {
+      if (typeof window === 'undefined') return false;
+      if (window.desktop) return true;
+      try {
+        return window.matchMedia('(min-width: 1024px)').matches;
+      } catch (e) {
+        return false;
+      }
+    }
+
     var HIDE_REMOTE_PHONE_CSS = [
       '/* Hide dsh-web-ui-all 移动端远程控制 and its white-square 检查更新 trigger.',
       '   Updates now live in 设置 → 插件 → 已安装. */',
@@ -449,8 +459,26 @@ window.__ModuleLoader__.load({
       'button[aria-label="发现新版本，检查更新"],',
       'button[title="检查更新"],',
       'button[title="发现新版本，检查更新"] { display: none !important; }',
-      '/* Keep the official left sidebar expanded. */',
-      '.hHd-Xa_toggle { display: none !important; }',
+    ].join('\n');
+
+    var PIN_AND_MOBILE_CSS = [
+      'html[data-dshd-pin-sidebar] [class*="_sidebarCol"] [class*="_toggle"] { display: none !important; }',
+      'html[data-dshd-pin-sidebar] [class*="_sidebarCol"] { min-width: 280px !important; }',
+      '.dshd-mobile-scrim { display: none; pointer-events: none; position: absolute; inset: 0; background: rgba(0,0,0,.35); z-index: 35; }',
+      '@media (max-width: 640px) {',
+      '  html:not([data-dshd-pin-sidebar]) [class*="_frame"]:not([data-sidebar-collapsed]) {',
+      '    grid-template-columns: 56px minmax(0, 1fr) 0px !important;',
+      '  }',
+      '  html:not([data-dshd-pin-sidebar]) [class*="_frame"]:not([data-sidebar-collapsed]) [class*="_sidebarCol"] {',
+      '    position: absolute; z-index: 40; left: 0; top: 0; bottom: 0;',
+      '    width: min(320px, 86vw) !important; box-shadow: 8px 0 32px rgba(0,0,0,.28);',
+      '  }',
+      '  html:not([data-dshd-pin-sidebar]) [class*="_frame"]:not([data-sidebar-collapsed]) .dshd-mobile-scrim {',
+      '    display: block; pointer-events: auto;',
+      '  }',
+      '}',
+      'html:not([data-dshd-pin-sidebar]) [data-sidebar-collapsed] .dshd-community-label { display: none !important; }',
+      'html:not([data-dshd-pin-sidebar]) [data-sidebar-collapsed] a[aria-label="社区"] { min-width: 44px; min-height: 44px; justify-content: center; }',
     ].join('\n');
 
     function apply(ctx) {
@@ -458,19 +486,123 @@ window.__ModuleLoader__.load({
         var tag = document.createElement('style');
         tag.setAttribute('data-plugin', 'phone-settings');
         tag.setAttribute('data-hide', 'remote-web-ui-phone');
-        tag.textContent = HIDE_REMOTE_PHONE_CSS;
+        tag.textContent = HIDE_REMOTE_PHONE_CSS + '\n' + PIN_AND_MOBILE_CSS;
         document.head.appendChild(tag);
-        var timer = setInterval(function () {
-          var collapsed = document.querySelector('.hHd-Xa_root.hHd-Xa_collapsed');
-          if (!collapsed) return;
-          var toggle = collapsed.querySelector('.hHd-Xa_toggle');
-          if (toggle) toggle.click();
-        }, 800);
+
+        function applyPin() {
+          if (shouldPinSidebar()) document.documentElement.setAttribute('data-dshd-pin-sidebar', '');
+          else document.documentElement.removeAttribute('data-dshd-pin-sidebar');
+        }
+
+        var toggling = false;
+        function toggleSidebarSafe() {
+          if (toggling) return;
+          toggling = true;
+          try {
+            var layout = ctx.layout || (ctx.get && ctx.get('layout'));
+            if (layout && typeof layout.toggleSidebar === 'function') layout.toggleSidebar();
+          } finally {
+            toggling = false;
+          }
+        }
+
+        function pullIfPinned() {
+          if (!shouldPinSidebar()) return;
+          var frame = document.querySelector('[class*="_frame"]');
+          if (!frame || !frame.hasAttribute('data-sidebar-collapsed')) return;
+          toggleSidebarSafe();
+        }
+
+        applyPin();
+        pullIfPinned();
+
+        var mq = null;
+        var onMq = function () {
+          applyPin();
+          pullIfPinned();
+        };
+        try {
+          mq = window.matchMedia('(min-width: 1024px)');
+          if (mq.addEventListener) mq.addEventListener('change', onMq);
+          else if (mq.addListener) mq.addListener(onMq);
+        } catch (e) { /* matchMedia unavailable */ }
+
+        var frameObserver = new MutationObserver(function () {
+          applyPin();
+          pullIfPinned();
+        });
+        var bootObserver = null;
+        function bindFrame() {
+          var frame = document.querySelector('[class*="_frame"]');
+          if (!frame) return false;
+          frameObserver.observe(frame, { attributes: true, attributeFilter: ['data-sidebar-collapsed'] });
+          pullIfPinned();
+          return true;
+        }
+        if (!bindFrame() && typeof MutationObserver !== 'undefined') {
+          bootObserver = new MutationObserver(function () {
+            if (bindFrame() && bootObserver) bootObserver.disconnect();
+          });
+          bootObserver.observe(document.documentElement, { childList: true, subtree: true });
+        }
+
+        function onSidebarClick(e) {
+          if (shouldPinSidebar()) return;
+          try {
+            if (!window.matchMedia('(max-width: 640px)').matches) return;
+          } catch (err) {
+            return;
+          }
+          var frame = document.querySelector('[class*="_frame"]');
+          if (!frame || frame.hasAttribute('data-sidebar-collapsed')) return;
+          var t = e.target;
+          if (!t || !t.closest) return;
+          if (t.closest('.dshd-mobile-scrim')) {
+            toggleSidebarSafe();
+            return;
+          }
+          if (!t.closest('[class*="_sidebarCol"]')) return;
+          if (t.closest('[class*="_toggle"]')) return;
+          var labeled = t.closest('[aria-label], [title]');
+          var label = labeled ? (labeled.getAttribute('aria-label') || labeled.getAttribute('title') || '') : '';
+          if (/搜索|视图|添加工作区/.test(label)) return;
+          if (!t.closest('li, [role="listitem"], button, a')) return;
+          toggleSidebarSafe();
+        }
+        document.addEventListener('click', onSidebarClick, true);
+
         return function () {
-          clearInterval(timer);
+          frameObserver.disconnect();
+          if (bootObserver) bootObserver.disconnect();
+          document.removeEventListener('click', onSidebarClick, true);
+          if (mq) {
+            if (mq.removeEventListener) mq.removeEventListener('change', onMq);
+            else if (mq.removeListener) mq.removeListener(onMq);
+          }
+          document.documentElement.removeAttribute('data-dshd-pin-sidebar');
           if (tag.parentNode) tag.parentNode.removeChild(tag);
         };
       }, 'phone-settings: hide duplicate remote-web-ui phone entry');
+
+      ctx.slots.inject('shell.overlay', function () {
+        return ctx.slots.register(
+          {
+            name: 'shell.overlay',
+            id: 'mobile-sidebar-scrim',
+            order: 10,
+          },
+          function () {
+            return h('div', {
+              className: 'dshd-mobile-scrim',
+              onClick: function () {
+                if (shouldPinSidebar()) return;
+                var layout = ctx.layout || (ctx.get && ctx.get('layout'));
+                if (layout && typeof layout.toggleSidebar === 'function') layout.toggleSidebar();
+              },
+            });
+          },
+        );
+      });
 
       ctx.slots.inject('settings.section', function () {
         return ctx.slots.register(
@@ -491,7 +623,7 @@ window.__ModuleLoader__.load({
 
     module.exports = {
       name: 'phone-settings',
-      inject: ['slots'],
+      inject: ['slots', 'layout'],
       apply,
     };
     return module.exports;

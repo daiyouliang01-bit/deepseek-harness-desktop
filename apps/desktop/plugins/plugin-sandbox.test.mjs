@@ -47,6 +47,7 @@ test('phone-settings package.json is a valid dsh web bundle', () => {
   assert.equal(pkg.name, '@dshd/phone-settings')
   assert.equal(pkg.dsh.client.platform, 'web')
   assert.ok(pkg.exports['./client'])
+  assert.ok(pkg.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-layout'))
 })
 
 test('community-links host half is a no-op plugin', async () => {
@@ -155,6 +156,51 @@ test('phone-settings client registers 手机 settings and hides remote phone ico
   const src = readFileSync(join(root, 'phone-settings/lib/client.js'), 'utf8')
   assert.match(src, /移动端远程控制/)
   assert.match(src, /display: none/)
+})
+
+test('desktop-chrome adapts the shell loader for lazy sidebar imports', async () => {
+  const exported = await loadClient('@dshd/desktop-chrome', join(root, 'desktop-chrome/lib/client.js'))
+  assert.deepEqual(exported.inject, ['slots'])
+  assert.equal(typeof globalThis.__DSH_MODULES__.import, 'function')
+  const react = await globalThis.__DSH_MODULES__.import('react')
+  assert.equal(typeof react.useState, 'function')
+})
+
+test('phone-settings pins desktop sidebar and lets phone collapse', () => {
+  const src = readFileSync(join(root, 'phone-settings/lib/client.js'), 'utf8')
+  assert.match(src, /shouldPinSidebar/)
+  assert.match(src, /data-dshd-pin-sidebar/)
+  assert.match(src, /min-width:\s*280px/)
+  assert.match(src, /:not\(\[data-dshd-pin-sidebar\]\)/)
+  assert.match(src, /shell\.overlay/)
+  assert.match(src, /toggleSidebar/)
+  assert.doesNotMatch(src, /hHd-Xa_collapsed/)
+  assert.doesNotMatch(src, /Keep the official left sidebar expanded/)
+  assert.doesNotMatch(src, /hHd-Xa_toggle \{ display: none/)
+})
+
+test('community-links footer stays icon-only on a collapsed phone rail', async () => {
+  const src = readFileSync(join(root, 'community-links/lib/client.js'), 'utf8')
+  assert.match(src, /aria-label/)
+  assert.match(src, /dshd-community-label/)
+  const registered = []
+  const exported = await loadClient('@dshd/community-links', join(root, 'community-links/lib/client.js'))
+  exported.apply({
+    get() {
+      return undefined
+    },
+    slots: {
+      inject(name, fn) {
+        registered.push({ name, options: fn() })
+        return () => {}
+      },
+      register(options) {
+        return options
+      },
+    },
+  })
+  const footer = registered.find((r) => r.name === 'sidebar.footer.action')
+  assert.ok(footer)
 })
 
 test('main process no longer injects the jumping phone FAB', () => {
