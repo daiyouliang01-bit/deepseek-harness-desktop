@@ -61,7 +61,7 @@ function bundledDescriptor(): RuntimeDescriptor | null {
   // undefined. DSHD_BUNDLED_RUNTIME lets tests/overrides point at a dir.
   const base = process.env.DSHD_BUNDLED_RUNTIME ?? (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath
   if (!base) return null
-  const nodeBin = join(base, 'runtime', 'node')
+  const nodeBin = join(base, 'runtime', process.platform === 'win32' ? 'node.exe' : 'node')
   const dshBinJs = join(base, 'runtime', 'dsh-cli', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
   if (!existsSync(nodeBin) || !existsSync(dshBinJs)) return null
   return { command: nodeBin, prefixArgs: [dshBinJs], label: `bundled ${nodeBin}` }

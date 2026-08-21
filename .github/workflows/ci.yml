@@ -83,3 +83,39 @@ jobs:
         with:
           name: desktop-macos-release
           path: apps/desktop/release/*
+
+  package-windows:
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # Windows release package: prepare the self-contained runtime on Windows
+      # (node-win-x64 + @deepseek-ai/dsh with Windows prebuilds), then
+      # electron-builder produces the NSIS installer (.exe) + zip.
+      - name: Prepare self-contained runtime (Windows)
+        run: node apps/desktop/scripts/prepare-runtime.mjs --release
+
+      - name: Package (Windows NSIS + zip)
+        run: pnpm --filter @dshd/desktop exec electron-builder --win --config apps/desktop/electron-builder.yml
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-release
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.zip
