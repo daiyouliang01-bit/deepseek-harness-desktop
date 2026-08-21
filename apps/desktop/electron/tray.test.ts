@@ -135,8 +135,8 @@ describe('app menu template', () => {
     quit: vi.fn()
   }
 
-  it('exposes View items for shell ↔ official UI switching', () => {
-    const tpl = buildAppMenuTemplate(actions)
+  it('exposes View items for shell ↔ official UI switching (dev mode)', () => {
+    const tpl = buildAppMenuTemplate(actions, { devMode: true })
     const view = tpl.find((m) => m.label === 'View')
     const shell = view?.submenu?.find((i) => i.label === 'Custom Shell (preview)')
     const official = view?.submenu?.find((i) => i.label === 'Official Web UI')
