@@ -12,3 +12,8 @@ coverage/
 playwright-report/
 test-results/
 apps/desktop/build/runtime/
+
+# local workspaces & session noise (never ship)
+work/
+ai视频/
+日常/.playwright-cli/

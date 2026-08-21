@@ -1,0 +1,9 @@
+# dsh-file-preview bundle for DeepSeek Harness (dsh).
+# Inserted into the profile composition when installed via
+# `dsh plugin --profile web add link:/path/to/dsh-file-preview` (file: dep in
+# profile package.json). The node half serves /preview/* and the RPCs; the
+# browser half registers the sidebar button, the file-tree drawer, and the
+# right-side multi-tab preview panel.
+- insert:
+    - id: file-preview
+      name: '@dshd/dsh-file-preview'

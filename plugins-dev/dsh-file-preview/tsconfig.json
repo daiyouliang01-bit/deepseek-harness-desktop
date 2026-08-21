@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "declaration": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "baseUrl": ".",
+    "paths": {
+      "@deepseek-ai/cordis": ["/Users/litong/Documents/DeepSeekHarnessDesktop/apps/desktop/release/mac-arm64/DeepSeek Harness Desktop.app/Contents/Resources/runtime/dsh-cli/node_modules/@deepseek-ai/cordis/lib/types/index.d.ts"],
+      "@deepseek-ai/cordis/*": ["/Users/litong/Documents/DeepSeekHarnessDesktop/apps/desktop/release/mac-arm64/DeepSeek Harness Desktop.app/Contents/Resources/runtime/dsh-cli/node_modules/@deepseek-ai/cordis/lib/types/*"],
+      "@deepseek-ai/dsh-client-runtime/client": ["/Users/litong/Documents/DeepSeekHarnessDesktop/apps/desktop/release/mac-arm64/DeepSeek Harness Desktop.app/Contents/Resources/runtime/dsh-cli/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/index.d.ts"]
+    },
+    "emitDeclarationOnly": true
+  },
+  "include": ["src"]
+}
