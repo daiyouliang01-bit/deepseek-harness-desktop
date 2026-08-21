@@ -11,6 +11,20 @@ directories:
   output: release
   buildResources: build
 
+# Auto-update feed (Task 5.3): electron-updater resolves GitHub Releases from
+# this block + the repository field in package.json. UpdateManager checks it;
+# without a publish target every packaged build would have no feed to poll.
+# Releases must carry the latest.yml/latest-mac.yml metadata electron-builder
+# generates — i.e. publish the artifacts IT produced, not hand-zipped apps.
+publish:
+  provider: github
+  owner: daiyouliang01-bit
+  repo: deepseek-harness-desktop
+  # Channels: beta users track the `beta` tag, everyone else `latest`.
+  # Upload prereleases with --draft=false --prerelease=true to keep them off
+  # the stable channel until promoted.
+  releaseType: release
+
 files:
   - out/**/*
   - package.json
@@ -47,7 +61,15 @@ mac:
   target:
     - dmg
     - zip
-  # code signing secrets land in CI; local builds run unsigned.
+  # Production signing (Gate 5) — set these in CI secrets / local env and the
+  # same config signs + notarizes; unset → identity falls through to null and
+  # builds stay unsigned (current dev posture):
+  #   CSC_NAME: "Developer ID Application: <name> (<team id>)"
+  #   CSC_LINK / CSC_KEY_PASSWORD   (or a keychain identity)
+  #   APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID  → notarization
+  # electron-builder runs notarization automatically after a successful sign
+  # when the APPLE_* trio is present; auto-update REQUIRES signed+notarized
+  # builds on macOS (Gatekeeper rejects unsigned delta updates).
   identity: null
   # macOS-specific hardening (packaged app only).
   hardenedRuntime: true
