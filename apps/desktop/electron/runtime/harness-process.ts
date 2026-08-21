@@ -367,7 +367,7 @@ export class HarnessProcess extends EventEmitter<HarnessProcessEvents> {
     const exited = new Promise<boolean>((resolve) => {
       child.once('exit', () => resolve(true))
     })
-    const sleep = (ms: number) => new Promise<false>((resolve) => setTimeout(resolve, ms))
+    const sleep = (ms: number) => new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms))
     this.killTree(child)
     let died = await Promise.race([exited, sleep(timeoutMs)])
     if (!died && pid) {
