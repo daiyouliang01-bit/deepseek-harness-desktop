@@ -12,7 +12,10 @@ import { StreamBridge } from './stream-bridge'
 function dshAvailable(): boolean {
   try {
     const { execFileSync } = require('node:child_process') as typeof import('node:child_process')
-    execFileSync('dsh', ['--version'], { stdio: 'ignore' })
+    // Honor the same binary override the spawn path uses; a bare 'dsh' on
+    // PATH is only one of the ways these suites can run.
+    const bin = process.env.DSHD_DSH_BIN ?? 'dsh'
+    execFileSync(bin, ['--version'], { stdio: 'ignore' })
     return true
   } catch {
     return false
@@ -68,9 +71,9 @@ function solidPng(size: number, rgb: [number, number, number]): Buffer {
   ihdr[9] = 2 // color type: truecolor RGB
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), // PNG signature
-    chunk('IHDR', ihdr),
-    chunk('IDAT', deflateSync(raw)),
-    chunk('IEND', Buffer.alloc(0))
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', deflateSync(raw)),
+    pngChunk('IEND', Buffer.alloc(0))
   ])
 }
 

@@ -8,7 +8,10 @@ import { RpcClient } from './rpc-client'
 function dshAvailable(): boolean {
   try {
     const { execFileSync } = require('node:child_process') as typeof import('node:child_process')
-    execFileSync('dsh', ['--version'], { stdio: 'ignore' })
+    // Honor the same binary override the spawn path uses; a bare 'dsh' on
+    // PATH is only one of the ways these suites can run.
+    const bin = process.env.DSHD_DSH_BIN ?? 'dsh'
+    execFileSync(bin, ['--version'], { stdio: 'ignore' })
     return true
   } catch {
     return false

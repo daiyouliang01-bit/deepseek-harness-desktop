@@ -20,7 +20,10 @@ import { runCompatibilityChecks } from '../../apps/desktop/electron/runtime/comp
 function dshAvailable(): boolean {
   try {
     const { execFileSync } = require('node:child_process') as typeof import('node:child_process')
-    execFileSync('dsh', ['--version'], { stdio: 'ignore' })
+    // Honor the same binary override the spawn path uses; a bare 'dsh' on
+    // PATH is only one of the ways these suites can run.
+    const bin = process.env.DSHD_DSH_BIN ?? 'dsh'
+    execFileSync(bin, ['--version'], { stdio: 'ignore' })
     return true
   } catch {
     return false
@@ -67,7 +70,7 @@ describe.skipIf(!dshAvailable())('harness compatibility smoke', () => {
   })
 
   it('startup: spawns dsh web, parses ready URL, serves HTTP', async () => {
-    const hp = new HarnessProcess({ readyTimeoutMs: 60_000, env: isolatedEnv() })
+    const hp = new HarnessProcess({ readyTimeoutMs: 60_000, dshBin: process.env.DSHD_DSH_BIN ?? 'dsh', env: isolatedEnv() })
     const info = await hp.start()
     expect(info.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
     const res = await fetch(info.url)
@@ -77,7 +80,7 @@ describe.skipIf(!dshAvailable())('harness compatibility smoke', () => {
   }, 90_000)
 
   it('restart: stops and starts again on a fresh port', async () => {
-    const hp = new HarnessProcess({ readyTimeoutMs: 60_000, env: isolatedEnv() })
+    const hp = new HarnessProcess({ readyTimeoutMs: 60_000, dshBin: process.env.DSHD_DSH_BIN ?? 'dsh', env: isolatedEnv() })
     const first = await hp.start()
     const second = await hp.restart()
     expect(second.port).toBeGreaterThan(0)
