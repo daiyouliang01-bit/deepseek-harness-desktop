@@ -1,3 +1,4 @@
+import * as React from 'react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { AutomationViewProps, Translate } from './contracts.js'
 import {
@@ -326,7 +327,29 @@ function RecentRun({ run, now, t, busy, onOpen, onMarkRead }: {
 }
 
 /** Native conversation view: all data and effects arrive through the slot's four shares. */
-export function AutomationView({
+
+/** 渲染异常兜底：自动化视图任何渲染错误都显示出来，而不是静默空白。 */
+class AutomationErrorBoundary extends React.Component<any, { error: any }> {
+  state = { error: null as Error | null }
+  static getDerivedStateFromError(error: Error): { error: Error } {
+    return { error }
+  }
+  render(): JSX.Element {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 24, color: '#ff6b6b', fontSize: 13, whiteSpace: 'pre-wrap' }}>
+          <h3>自动化视图渲染出错</h3>
+          <div>{String(this.state.error.message ?? this.state.error)}</div>
+          <div style={{ marginTop: 12, color: '#999', fontSize: 11 }}>{String(this.state.error.stack ?? '').slice(0, 600)}</div>
+          <button style={{ marginTop: 16 }} onClick={() => this.setState({ error: null })}>重试</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+function AutomationViewInner({
   t, useAutomationState, refresh, createAutomation, mutateAutomation, runNow, markRunRead, openSession,
 }: AutomationViewProps): JSX.Element {
   const state = useAutomationState(value => value)
@@ -418,8 +441,8 @@ export function AutomationView({
       </header>
 
       <div className="dsh-automation-scope">
-        <span><strong>{t('scope.workspace')}</strong>{snapshot.scope.workspaceName ?? snapshot.scope.workspaceId ?? '—'}</span>
-        <span><strong>{t('scope.folder')}</strong><code>{snapshot.scope.cwd}</code></span>
+        <span><strong>{t('scope.workspace')}</strong>{snapshot.scope?.workspaceName ?? snapshot.scope?.workspaceId ?? '—'}</span>
+        <span><strong>{t('scope.folder')}</strong><code>{snapshot.scope?.cwd ?? '—'}</code></span>
       </div>
 
       {showCreate && (
@@ -489,5 +512,14 @@ export function AutomationView({
         </aside>
       </div>
     </div>
+  )
+}
+
+/** 对外出口：渲染异常兜底（静默空白 → 可见报错 + 重试）。 */
+export function AutomationView(props: AutomationViewProps): JSX.Element {
+  return (
+    <AutomationErrorBoundary>
+      <AutomationViewInner {...props} />
+    </AutomationErrorBoundary>
   )
 }
